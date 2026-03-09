@@ -1,15 +1,23 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
+
+# Importar módulo de autenticação
+from auth import (
+    get_password_hash, verify_password, create_access_token,
+    get_current_user, require_role, UserRole, Token,
+    can_create_user, can_manage_operations, can_approve_dossier,
+    can_view_audit, is_read_only, security
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -50,6 +58,54 @@ class StatusProdutor(str, Enum):
     PENDENTE = "pendente"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# MODELS - AUTENTICAÇÃO
+# ─────────────────────────────────────────────────────────────────────────────
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class UsuarioCreate(BaseModel):
+    nome: str
+    email: EmailStr
+    password: str
+    role: UserRole
+    telefone: Optional[str] = ""
+
+class Usuario(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    nome: str
+    email: EmailStr
+    password_hash: str
+    role: UserRole
+    telefone: Optional[str] = ""
+    ativo: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_login: Optional[datetime] = None
+
+class UsuarioResponse(BaseModel):
+    id: str
+    nome: str
+    email: EmailStr
+    role: UserRole
+    telefone: Optional[str]
+    ativo: bool
+    created_at: datetime
+    last_login: Optional[datetime]
+
+class AuditLog(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    usuario_id: str
+    usuario_nome: str
+    acao: str
+    detalhes: str
+    ip: Optional[str] = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MODELS - PRODUTOR
 # ─────────────────────────────────────────────────────────────────────────────
 class ProdutorCreate(BaseModel):
@@ -84,6 +140,7 @@ class Produtor(BaseModel):
     cafir: Optional[str] = ""
     status: StatusProdutor = StatusProdutor.ATIVO
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: Optional[str] = None
 
 class ProdutorComEnquadramento(Produtor):
     enquadramento: Dict
@@ -111,6 +168,9 @@ class Operacao(BaseModel):
     banco: str
     status: StatusOperacao = StatusOperacao.PENDENTE
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: Optional[str] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
 
 class OperacaoComProdutor(Operacao):
     produtor: Optional[Produtor] = None
@@ -121,7 +181,7 @@ class OperacaoComProdutor(Operacao):
 # MODELS - DOCUMENTOS
 # ─────────────────────────────────────────────────────────────────────────────
 class DocumentoStatusUpdate(BaseModel):
-    documentos: Dict[str, StatusDocumento]  # {"rg": "ok", "caf": "pendente", ...}
+    documentos: Dict[str, StatusDocumento]
 
 class DocumentoStatusResponse(BaseModel):
     operacao_id: str
@@ -195,7 +255,7 @@ def serialize_datetime(obj):
         return obj.isoformat()
     return obj
 
-def deserialize_datetime(obj, fields=['created_at', 'timestamp', 'uploaded_at']):
+def deserialize_datetime(obj, fields=['created_at', 'timestamp', 'uploaded_at', 'last_login', 'approved_at']):
     """Deserializa ISO string para datetime"""
     if isinstance(obj, dict):
         for field in fields:
@@ -207,14 +267,182 @@ def deserialize_datetime(obj, fields=['created_at', 'timestamp', 'uploaded_at'])
         return obj
     return obj
 
+async def registrar_auditoria(usuario: dict, acao: str, detalhes: str, request: Request = None):
+    """Registra uma ação na auditoria"""
+    audit = AuditLog(
+        usuario_id=usuario["id"],
+        usuario_nome=usuario["nome"],
+        acao=acao,
+        detalhes=detalhes,
+        ip=request.client.host if request else None
+    )
+    doc = serialize_datetime(audit.model_dump())
+    await db.audit_logs.insert_one(doc)
+
+# Dependency helper para injetar o usuário autenticado com DB
+async def get_user(credentials = Depends(security)):
+    return await get_current_user(credentials, db)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTES - AUTENTICAÇÃO
+# ─────────────────────────────────────────────────────────────────────────────
+@api_router.post("/auth/login", response_model=Token)
+async def login(request: Request, login_data: LoginRequest):
+    """Login com email e senha"""
+    user = await db.usuarios.find_one({"email": login_data.email}, {"_id": 0})
+    
+    if not user or not verify_password(login_data.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Email ou senha incorretos")
+    
+    if not user.get("ativo", True):
+        raise HTTPException(status_code=403, detail="Usuário desativado")
+    
+    # Atualizar last_login
+    await db.usuarios.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_login": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Criar token
+    access_token = create_access_token(
+        data={"sub": user["email"], "role": user["role"]}
+    )
+    
+    # Registrar auditoria
+    await registrar_auditoria(user, "LOGIN", f"Login realizado", request)
+    
+    # Remover senha da resposta
+    user_response = {k: v for k, v in user.items() if k != "password_hash"}
+    
+    return Token(access_token=access_token, user=user_response)
+
+@api_router.get("/auth/me", response_model=UsuarioResponse)
+async def get_me(credentials = Depends(security)):
+    """Retorna dados do usuário logado"""
+    user = await get_current_user(credentials, db)
+    return UsuarioResponse(**user)
+
+@api_router.post("/auth/usuarios", response_model=UsuarioResponse)
+async def criar_usuario(
+    request: Request,
+    usuario_data: UsuarioCreate,
+    current_user: dict = Depends(get_user)
+):
+    """Criar novo usuário (apenas Admin)"""
+    if not can_create_user(current_user):
+        raise HTTPException(status_code=403, detail="Apenas administradores podem criar usuários")
+    
+    # Verificar se email já existe
+    existing = await db.usuarios.find_one({"email": usuario_data.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
+    
+    # Criar usuário
+    usuario = Usuario(
+        nome=usuario_data.nome,
+        email=usuario_data.email,
+        password_hash=get_password_hash(usuario_data.password),
+        role=usuario_data.role,
+        telefone=usuario_data.telefone
+    )
+    
+    doc = serialize_datetime(usuario.model_dump())
+    await db.usuarios.insert_one(doc)
+    
+    # Registrar auditoria
+    await registrar_auditoria(
+        current_user,
+        "CRIAR_USUARIO",
+        f"Criou usuário {usuario.nome} ({usuario.email}) com role {usuario.role}",
+        request
+    )
+    
+    return UsuarioResponse(**usuario.model_dump())
+
+@api_router.get("/auth/usuarios", response_model=List[UsuarioResponse])
+async def listar_usuarios(current_user: dict = Depends(get_user)):
+    """Listar todos os usuários (apenas Admin)"""
+    if not can_create_user(current_user):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    usuarios = await db.usuarios.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    usuarios = [deserialize_datetime(u) for u in usuarios]
+    return [UsuarioResponse(**u) for u in usuarios]
+
+@api_router.put("/auth/usuarios/{id}")
+async def atualizar_usuario(
+    request: Request,
+    id: str,
+    updates: dict,
+    current_user: dict = Depends(get_user)
+):
+    """Atualizar usuário (apenas Admin)"""
+    if not can_create_user(current_user):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    # Não permitir atualizar senha diretamente
+    if "password" in updates:
+        updates["password_hash"] = get_password_hash(updates.pop("password"))
+    
+    result = await db.usuarios.update_one({"id": id}, {"$set": updates})
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    await registrar_auditoria(current_user, "ATUALIZAR_USUARIO", f"Atualizou usuário {id}", request)
+    
+    return {"success": True}
+
+@api_router.delete("/auth/usuarios/{id}")
+async def desativar_usuario(
+    request: Request,
+    id: str,
+    current_user: dict = Depends(get_user)
+):
+    """Desativar usuário (apenas Admin)"""
+    if not can_create_user(current_user):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    if id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Não pode desativar o próprio usuário")
+    
+    result = await db.usuarios.update_one({"id": id}, {"$set": {"ativo": False}})
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    await registrar_auditoria(current_user, "DESATIVAR_USUARIO", f"Desativou usuário {id}", request)
+    
+    return {"success": True}
+
+@api_router.get("/auth/audit", response_model=List[AuditLog])
+async def listar_auditoria(
+    limit: int = 100,
+    current_user: dict = Depends(get_user)
+):
+    """Listar logs de auditoria (Admin e Gerente)"""
+    if not can_view_audit(current_user):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+    
+    logs = await db.audit_logs.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    logs = [deserialize_datetime(log) for log in logs]
+    return logs
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ROUTES - PRODUTORES
 # ─────────────────────────────────────────────────────────────────────────────
 @api_router.post("/produtores", response_model=ProdutorComEnquadramento)
-async def criar_produtor(input: ProdutorCreate):
+async def criar_produtor(
+    request: Request,
+    input: ProdutorCreate,
+    current_user: dict = Depends(get_user)
+):
     """Criar novo produtor com enquadramento automático"""
+    if not can_manage_operations(current_user):
+        raise HTTPException(status_code=403, detail="Sem permissão para criar produtores")
+    
     produtor_dict = input.model_dump()
-    produtor = Produtor(**produtor_dict)
+    produtor = Produtor(**produtor_dict, created_by=current_user["id"])
     
     # Calcular enquadramento
     enquadramento = calcular_enquadramento(produtor.renda)
@@ -223,19 +451,27 @@ async def criar_produtor(input: ProdutorCreate):
     doc = serialize_datetime(produtor.model_dump())
     await db.produtores.insert_one(doc)
     
+    # Registrar auditoria
+    await registrar_auditoria(
+        current_user,
+        "CRIAR_PRODUTOR",
+        f"Criou produtor {produtor.nome} (CPF: {produtor.cpf})",
+        request
+    )
+    
     # Retornar com enquadramento
     result = ProdutorComEnquadramento(**produtor.model_dump(), enquadramento=enquadramento)
     return result
 
 @api_router.get("/produtores", response_model=List[Produtor])
-async def listar_produtores():
+async def listar_produtores(current_user: dict = Depends(get_user)):
     """Listar todos os produtores"""
     produtores = await db.produtores.find({}, {"_id": 0}).to_list(1000)
     produtores = [deserialize_datetime(p) for p in produtores]
     return produtores
 
 @api_router.get("/produtores/{id}", response_model=ProdutorComEnquadramento)
-async def buscar_produtor(id: str):
+async def buscar_produtor(id: str, current_user: dict = Depends(get_user)):
     """Buscar produtor por ID"""
     produtor = await db.produtores.find_one({"id": id}, {"_id": 0})
     if not produtor:
@@ -250,15 +486,22 @@ async def buscar_produtor(id: str):
 # ROUTES - OPERAÇÕES
 # ─────────────────────────────────────────────────────────────────────────────
 @api_router.post("/operacoes", response_model=Operacao)
-async def criar_operacao(input: OperacaoCreate):
+async def criar_operacao(
+    request: Request,
+    input: OperacaoCreate,
+    current_user: dict = Depends(get_user)
+):
     """Criar nova operação de crédito"""
+    if not can_manage_operations(current_user):
+        raise HTTPException(status_code=403, detail="Sem permissão para criar operações")
+    
     # Verificar se produtor existe
     produtor = await db.produtores.find_one({"id": input.prod_id})
     if not produtor:
         raise HTTPException(status_code=404, detail="Produtor não encontrado")
     
     operacao_dict = input.model_dump()
-    operacao = Operacao(**operacao_dict)
+    operacao = Operacao(**operacao_dict, created_by=current_user["id"])
     
     # Salvar operação
     doc = serialize_datetime(operacao.model_dump())
@@ -284,10 +527,21 @@ async def criar_operacao(input: OperacaoCreate):
     }
     await db.documentos.insert_one(doc_status)
     
+    # Registrar auditoria
+    await registrar_auditoria(
+        current_user,
+        "CRIAR_OPERACAO",
+        f"Criou operação {operacao.id} para produtor {produtor['nome']}",
+        request
+    )
+    
     return operacao
 
 @api_router.get("/operacoes", response_model=List[OperacaoComProdutor])
-async def listar_operacoes(status: Optional[str] = None):
+async def listar_operacoes(
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_user)
+):
     """Listar todas as operações com filtro opcional de status"""
     query = {}
     if status and status != "todas":
@@ -318,7 +572,7 @@ async def listar_operacoes(status: Optional[str] = None):
     return result
 
 @api_router.get("/operacoes/{id}", response_model=OperacaoComProdutor)
-async def buscar_operacao(id: str):
+async def buscar_operacao(id: str, current_user: dict = Depends(get_user)):
     """Buscar operação por ID com dados completos"""
     operacao = await db.operacoes.find_one({"id": id}, {"_id": 0})
     if not operacao:
@@ -342,15 +596,36 @@ async def buscar_operacao(id: str):
     )
 
 @api_router.put("/operacoes/{id}")
-async def atualizar_operacao(id: str, status: StatusOperacao):
+async def atualizar_operacao(
+    request: Request,
+    id: str,
+    status: StatusOperacao,
+    current_user: dict = Depends(get_user)
+):
     """Atualizar status da operação"""
-    result = await db.operacoes.update_one(
-        {"id": id},
-        {"$set": {"status": status.value}}
-    )
+    if not can_manage_operations(current_user):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
+    # Se for aprovar, verificar permissão especial
+    if status == StatusOperacao.PRONTO and not can_approve_dossier(current_user):
+        raise HTTPException(status_code=403, detail="Sem permissão para aprovar dossiês")
+    
+    update_data = {"status": status.value}
+    if status == StatusOperacao.PRONTO:
+        update_data["approved_by"] = current_user["id"]
+        update_data["approved_at"] = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.operacoes.update_one({"id": id}, {"$set": update_data})
     
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Operação não encontrada")
+    
+    await registrar_auditoria(
+        current_user,
+        "ATUALIZAR_OPERACAO",
+        f"Alterou status da operação {id} para {status.value}",
+        request
+    )
     
     return {"success": True, "message": "Status atualizado"}
 
@@ -358,8 +633,16 @@ async def atualizar_operacao(id: str, status: StatusOperacao):
 # ROUTES - DOCUMENTOS
 # ─────────────────────────────────────────────────────────────────────────────
 @api_router.put("/operacoes/{id}/documentos", response_model=DocumentoStatusResponse)
-async def atualizar_documentos(id: str, input: DocumentoStatusUpdate):
+async def atualizar_documentos(
+    request: Request,
+    id: str,
+    input: DocumentoStatusUpdate,
+    current_user: dict = Depends(get_user)
+):
     """Atualizar status dos documentos de uma operação"""
+    if not can_manage_operations(current_user):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    
     # Verificar se operação existe
     operacao = await db.operacoes.find_one({"id": id})
     if not operacao:
@@ -371,7 +654,8 @@ async def atualizar_documentos(id: str, input: DocumentoStatusUpdate):
         {
             "$set": {
                 "documentos": {k: v.value for k, v in input.documentos.items()},
-                "updated_at": datetime.now(timezone.utc).isoformat()
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_by": current_user["id"]
             }
         },
         upsert=True
@@ -389,6 +673,13 @@ async def atualizar_documentos(id: str, input: DocumentoStatusUpdate):
             {"$set": {"status": StatusOperacao.PRONTO.value}}
         )
     
+    await registrar_auditoria(
+        current_user,
+        "ATUALIZAR_DOCUMENTOS",
+        f"Atualizou documentos da operação {id}",
+        request
+    )
+    
     return DocumentoStatusResponse(
         operacao_id=id,
         documentos=documentos,
@@ -396,7 +687,7 @@ async def atualizar_documentos(id: str, input: DocumentoStatusUpdate):
     )
 
 @api_router.get("/operacoes/{id}/documentos", response_model=DocumentoStatusResponse)
-async def buscar_documentos(id: str):
+async def buscar_documentos(id: str, current_user: dict = Depends(get_user)):
     """Buscar status dos documentos de uma operação"""
     docs = await db.documentos.find_one({"operacao_id": id}, {"_id": 0})
     if not docs:
@@ -415,7 +706,7 @@ async def buscar_documentos(id: str):
 # ROUTES - DASHBOARD
 # ─────────────────────────────────────────────────────────────────────────────
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
-async def obter_estatisticas():
+async def obter_estatisticas(current_user: dict = Depends(get_user)):
     """Obter estatísticas para o dashboard"""
     from datetime import timedelta
     
@@ -450,7 +741,7 @@ async def obter_estatisticas():
     # Total de produtores
     total_produtores = await db.produtores.count_documents({})
     
-    # Taxa de aprovação (simulada)
+    # Taxa de aprovação
     ops_prontas = await db.operacoes.count_documents({"status": "pronto"})
     ops_encaminhadas = await db.operacoes.count_documents({"status": "encaminhado"})
     total_ops = await db.operacoes.count_documents({})
@@ -470,7 +761,7 @@ async def obter_estatisticas():
 # ─────────────────────────────────────────────────────────────────────────────
 @api_router.get("/")
 async def root():
-    return {"message": "API MAYA - Sistema de Crédito Rural", "version": "1.0.0"}
+    return {"message": "API MAYA - Sistema de Crédito Rural", "version": "2.0.0", "auth": "enabled"}
 
 # Include the router in the main app
 app.include_router(api_router)
@@ -489,6 +780,28 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STARTUP - CRIAR USUÁRIO ADMIN PADRÃO
+# ─────────────────────────────────────────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    """Criar usuário admin padrão se não existir"""
+    admin_exists = await db.usuarios.find_one({"role": "admin"})
+    
+    if not admin_exists:
+        admin = Usuario(
+            nome="Administrador",
+            email="admin@maya.com",
+            password_hash=get_password_hash("admin123"),
+            role=UserRole.ADMIN,
+            telefone=""
+        )
+        doc = serialize_datetime(admin.model_dump())
+        await db.usuarios.insert_one(doc)
+        logger.info("✅ Usuário admin criado: admin@maya.com / admin123")
+    else:
+        logger.info("ℹ️  Usuário admin já existe")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

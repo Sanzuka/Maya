@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { AuthProvider, useAuth } from "./AuthContext";
+import Login from "./Login";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -35,6 +37,10 @@ const IC = {
   trash:   "M3 6h18 M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6 M10 11v6 M14 11v6 M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2",
   edit:    "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
   pdf:     "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M10 12a2 2 0 104 0 2 2 0 00-4 0 M8 18h8",
+  logout:  "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4 M16 17l5-5-5-5 M21 12H9",
+  user:    "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 11a4 4 0 100-8 4 4 0 000 8z",
+  shield:  "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  settings: "M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,6 +108,11 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .tb-search:hover{border-color:var(--bdr);}
 .tb-bell{position:relative;cursor:pointer;color:var(--mid);padding:4px;background:none;border:none;transition:color .15s;}
 .tb-bell:hover{color:var(--gold);}
+.tb-user{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg3);border:1px solid var(--bdr2);border-radius:4px;font-size:9px;}
+.tb-user-name{color:var(--text);font-weight:500;}
+.tb-user-role{color:var(--dim);font-size:7.5px;letter-spacing:1px;text-transform:uppercase;}
+.tb-logout{padding:6px 10px;background:none;border:1px solid var(--bdr2);border-radius:4px;cursor:pointer;color:var(--mid);transition:all .15s;font-size:9px;}
+.tb-logout:hover{border-color:var(--bdr);color:var(--red);}
 .bdot{position:absolute;top:2px;right:2px;width:6px;height:6px;background:var(--red);border-radius:50%;border:1.5px solid var(--bg2);}
 .tb-date{font-size:9px;color:var(--dim);padding-left:12px;border-left:1px solid var(--bdr2);}
 
@@ -1017,9 +1028,204 @@ function Dossie({ setScreen, selectedOp }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SCREEN: GERENCIAR USUÁRIOS (ADMIN)
+// ─────────────────────────────────────────────────────────────────────────────
+function GerenciarUsuarios({ setScreen }) {
+  const { user: currentUser } = useAuth();
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nome:"", email:"", password:"", role:"operador", telefone:"" });
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    carregarUsuarios();
+  }, []);
+
+  const carregarUsuarios = async () => {
+    try {
+      const response = await axios.get(`${API}/auth/usuarios`);
+      setUsuarios(response.data);
+      setLoading(false);
+    } catch (err) {
+      console.error("Erro ao carregar usuários:", err);
+      setLoading(false);
+    }
+  };
+
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const criarUsuario = async () => {
+    setError("");
+    setSuccess("");
+    try {
+      await axios.post(`${API}/auth/usuarios`, form);
+      setSuccess("Usuário criado com sucesso!");
+      setShowForm(false);
+      setForm({ nome:"", email:"", password:"", role:"operador", telefone:"" });
+      carregarUsuarios();
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Erro ao criar usuário");
+    }
+  };
+
+  const desativar = async (id) => {
+    if (window.confirm("Deseja realmente desativar este usuário?")) {
+      try {
+        await axios.delete(`${API}/auth/usuarios/${id}`);
+        setSuccess("Usuário desativado com sucesso!");
+        carregarUsuarios();
+        setTimeout(() => setSuccess(""), 3000);
+      } catch (err) {
+        setError(err.response?.data?.detail || "Erro ao desativar usuário");
+      }
+    }
+  };
+
+  const roleColors = {
+    admin: {color:"var(--gold)", bg:"rgba(200,168,75,0.12)", border:"rgba(200,168,75,0.3)"},
+    gerente: {color:"var(--blue)", bg:"rgba(122,158,192,0.12)", border:"rgba(122,158,192,0.3)"},
+    operador: {color:"var(--green)", bg:"rgba(109,181,128,0.12)", border:"rgba(109,181,128,0.3)"},
+    visualizador: {color:"var(--mid)", bg:"rgba(154,158,138,0.12)", border:"rgba(154,158,138,0.3)"}
+  };
+
+  const roleLabels = {
+    admin: "Administrador",
+    gerente: "Gerente",
+    operador: "Operador",
+    visualizador: "Visualizador"
+  };
+
+  if (loading) return <div className="scroll"><div className="loading">Carregando...</div></div>;
+
+  return (
+    <div className="scroll">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div>
+          <div className="sl" style={{marginBottom:4}}>Administração</div>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:22,fontWeight:800,color:"var(--text)",letterSpacing:1}}>
+            Gerenciar Usuários
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn btn-ghost" onClick={()=>setScreen("dashboard")}>
+            <Icon d={IC.back} size={11}/> VOLTAR
+          </button>
+          <button className="btn btn-gold" onClick={()=>setShowForm(!showForm)}>
+            <Icon d={showForm ? IC.back : IC.plus} size={11}/> {showForm?"CANCELAR":"NOVO USUÁRIO"}
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+      {success && <div className="success"><Icon d={IC.check} size={13}/> {success}</div>}
+
+      {showForm && (
+        <div className="form-section" style={{marginBottom:14}}>
+          <div className="form-section-title">Novo Usuário</div>
+          <div className="form-row" style={{marginBottom:12}}>
+            <div className="fg">
+              <label>Nome Completo</label>
+              <input value={form.nome} onChange={e=>set("nome",e.target.value)} placeholder="Nome do usuário"/>
+            </div>
+            <div className="fg">
+              <label>Email</label>
+              <input type="email" value={form.email} onChange={e=>set("email",e.target.value)} placeholder="email@exemplo.com"/>
+            </div>
+          </div>
+          <div className="form-row" style={{marginBottom:12}}>
+            <div className="fg">
+              <label>Senha</label>
+              <input type="password" value={form.password} onChange={e=>set("password",e.target.value)} placeholder="Senha forte"/>
+            </div>
+            <div className="fg">
+              <label>Telefone (opcional)</label>
+              <input value={form.telefone} onChange={e=>set("telefone",e.target.value)} placeholder="(00) 00000-0000"/>
+            </div>
+          </div>
+          <div className="fg" style={{marginBottom:12}}>
+            <label>Nível de Acesso</label>
+            <select value={form.role} onChange={e=>set("role",e.target.value)}>
+              <option value="visualizador">Visualizador (apenas leitura)</option>
+              <option value="operador">Operador (criar/editar produtores e operações)</option>
+              <option value="gerente">Gerente (aprovar dossiês + auditoria)</option>
+              <option value="admin">Administrador (acesso total)</option>
+            </select>
+          </div>
+          <button className="btn btn-green" onClick={criarUsuario} style={{width:"100%",justifyContent:"center"}}>
+            <Icon d={IC.check} size={11}/> CRIAR USUÁRIO
+          </button>
+        </div>
+      )}
+
+      <div className="panel">
+        <div className="ph"><span className="pt">[ {usuarios.length} Usuários ]</span></div>
+        <table className="tbl">
+          <thead><tr>
+            <th>Usuário</th><th>Email</th><th>Nível de Acesso</th><th>Status</th><th>Cadastro</th><th></th>
+          </tr></thead>
+          <tbody>
+            {usuarios.map(u => {
+              const rc = roleColors[u.role];
+              const isCurrentUser = u.id === currentUser.id;
+              const created = new Date(u.created_at).toLocaleDateString('pt-BR');
+              return (
+                <tr key={u.id}>
+                  <td>
+                    <div className="prod-name">{u.nome}</div>
+                    <div className="prod-sub">{u.telefone || "Sem telefone"}</div>
+                  </td>
+                  <td style={{fontSize:10,color:"var(--mid)"}}>{u.email}</td>
+                  <td>
+                    <span className="sb2" style={{color:rc.color,background:rc.bg,border:`1px solid ${rc.border}`}}>
+                      {roleLabels[u.role]}
+                    </span>
+                  </td>
+                  <td>
+                    <span style={{fontSize:9,color:u.ativo?"var(--green)":"var(--red)",fontWeight:600}}>
+                      {u.ativo ? "✓ ATIVO" : "✗ DESATIVADO"}
+                    </span>
+                  </td>
+                  <td style={{fontSize:9,color:"var(--dim)"}}>{created}</td>
+                  <td>
+                    {!isCurrentUser && u.ativo && (
+                      <button 
+                        className="btn btn-red" 
+                        style={{padding:"4px 9px",fontSize:9}}
+                        onClick={()=>desativar(u.id)}
+                      >
+                        <Icon d={IC.trash} size={10}/> DESATIVAR
+                      </button>
+                    )}
+                    {isCurrentUser && (
+                      <span style={{fontSize:8,color:"var(--gold)"}}>VOCÊ</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{marginTop:20,padding:14,background:"var(--bg3)",border:"1px solid var(--bdr2)",borderRadius:6,fontSize:9,color:"var(--mid)",lineHeight:1.6}}>
+        <div style={{color:"var(--gold)",fontWeight:600,marginBottom:6}}>NÍVEIS DE ACESSO:</div>
+        <div><b style={{color:"var(--gold)"}}>Admin:</b> Acesso total + gerenciar usuários</div>
+        <div><b style={{color:"var(--blue)"}}>Gerente:</b> Criar/editar + aprovar dossiês + auditoria</div>
+        <div><b style={{color:"var(--green)"}}>Operador:</b> Criar/editar produtores e operações</div>
+        <div><b style={{color:"var(--mid)"}}>Visualizador:</b> Apenas consultar (read-only)</div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // APP SHELL
 // ─────────────────────────────────────────────────────────────────────────────
-export default function App() {
+function MayaApp() {
+  const { user, logout, isAdmin } = useAuth();
   const [screen, setScreen]       = useState("dashboard");
   const [selectedOp, setSelectedOp] = useState(null);
 
@@ -1031,10 +1237,29 @@ export default function App() {
     { key:"dossie",      label:"Dossiê",         icon:IC.dossie,badge:null },
   ];
 
+  // Adicionar item de gerenciamento apenas para admin
+  if (isAdmin()) {
+    navItems.push({ key:"usuarios", label:"Usuários", icon:IC.shield, badge:null });
+  }
+
   const today = new Intl.DateTimeFormat("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"})
     .format(new Date()).replace(/^\w/,c=>c.toUpperCase());
 
-  const screenLabel = { dashboard:"Dashboard", cadastro:"Novo Produtor", operacoes:"Operações", checklist:"Documentos", dossie:"Dossiê" };
+  const screenLabel = {
+    dashboard:"Dashboard",
+    cadastro:"Novo Produtor",
+    operacoes:"Operações",
+    checklist:"Documentos",
+    dossie:"Dossiê",
+    usuarios:"Gerenciar Usuários"
+  };
+
+  const roleLabels = {
+    admin: "Administrador",
+    gerente: "Gerente",
+    operador: "Operador",
+    visualizador: "Visualizador"
+  };
 
   return (
     <>
@@ -1067,6 +1292,16 @@ export default function App() {
             <div className="tb-sp"/>
             <div className="tb-search"><Icon d={IC.search} size={11}/> Buscar produtor ou operação...</div>
             <button className="tb-bell"><Icon d={IC.bell} size={15}/><span className="bdot"/></button>
+            <div className="tb-user">
+              <Icon d={IC.user} size={13}/>
+              <div>
+                <div className="tb-user-name">{user?.nome}</div>
+                <div className="tb-user-role">{roleLabels[user?.role]}</div>
+              </div>
+            </div>
+            <button className="tb-logout" onClick={logout}>
+              <Icon d={IC.logout} size={12}/> Sair
+            </button>
             <div className="tb-date">{today}</div>
           </header>
 
@@ -1075,8 +1310,35 @@ export default function App() {
           {screen==="operacoes" && <Operacoes setScreen={setScreen} setSelectedOp={setSelectedOp}/>}
           {screen==="checklist" && selectedOp && <Checklist setScreen={setScreen} selectedOp={selectedOp}/>}
           {screen==="dossie"    && selectedOp && <Dossie setScreen={setScreen} selectedOp={selectedOp}/>}
+          {screen==="usuarios"  && isAdmin() && <GerenciarUsuarios setScreen={setScreen}/>}
         </div>
       </div>
     </>
   );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppWithAuth />
+    </AuthProvider>
+  );
+}
+
+function AppWithAuth() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"var(--bg)",color:"var(--mid)"}}>
+        Carregando...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
+  return <MayaApp />;
 }
