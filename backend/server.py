@@ -23,7 +23,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection - Railway production
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://mongo:ogTOiWLcKcKYQxDSqELbxPPQJBiTYCTm@switchback.proxy.rlwy.net:15237/maya_production')
 client = AsyncIOMotorClient(mongo_url, authSource="admin")
 db = client[os.environ['DB_NAME']]
 
