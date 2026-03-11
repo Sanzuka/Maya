@@ -580,8 +580,7 @@ async def atualizar_operacao(
     """Atualizar status da operaÃ§Ã£o"""
     
     # Se for aprovar, verificar permissÃ£o especial
-    if status == StatusOperacao.PRONTO and not can_approve_dossier(current_user):
-        raise HTTPException(status_code=403, detail="Sem permissÃ£o para aprovar dossiÃªs")
+    # Aprovação sempre permitida (acesso aberto)
     
     update_data = {"status": status.value}
     if status == StatusOperacao.PRONTO:
