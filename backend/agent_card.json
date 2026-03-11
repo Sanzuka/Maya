@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0",
+  "agent_id": "maya-rural-credit-agent",
+  "name": "MAYA — Agente de Crédito Rural",
+  "description": "Agente especializado em automação de dossiês de crédito rural no Brasil. Processa dados de produtores rurais, aplica enquadramento automático (PRONAF / PRONAMP / Livre) conforme MCR/BACEN, valida checklist documental obrigatório e gera dossiê estruturado pronto para protocolo bancário.",
+  "version": "1.0.0",
+  "provider": {
+    "name": "AgentHouse",
+    "contact": "dellano@agentichouse.com",
+    "region": "BR-ES"
+  },
+  "endpoints": {
+    "base_url": "https://maya-production-e676.up.railway.app",
+    "task": "/api/agent/task",
+    "status": "/api/agent/task/{task_id}",
+    "health": "/api/agent/health",
+    "agent_card": "/api/agent/card"
+  },
+  "capabilities": [
+    {
+      "id": "enquadramento",
+      "name": "Enquadramento Automático",
+      "description": "Classifica o produtor em PRONAF, PRONAMP ou Livre com base na renda bruta anual, conforme Manual de Crédito Rural (MCR) do BACEN.",
+      "input_schema": {
+        "renda_bruta_anual": "number (BRL)",
+        "modulos_fiscais": "number",
+        "atividade": "string"
+      },
+      "output_schema": {
+        "linha": "PRONAF | PRONAMP | Livre",
+        "taxa_referencia": "string",
+        "limite_credito": "number (BRL)",
+        "justificativa": "string"
+      }
+    },
+    {
+      "id": "checklist_documental",
+      "name": "Validação Documental",
+      "description": "Verifica completude do checklist obrigatório: RG/CPF, CAF, CCIR, ITR, CAR, CAFIR, Matrícula, IE, ZARC.",
+      "input_schema": {
+        "operacao_id": "string",
+        "documentos": "object (doc_id: status)"
+      },
+      "output_schema": {
+        "completo": "boolean",
+        "pendentes": "array<string>",
+        "percentual": "number (0-100)",
+        "apto_encaminhamento": "boolean"
+      }
+    },
+    {
+      "id": "gerar_dossie",
+      "name": "Geração de Dossiê",
+      "description": "Consolida todos os dados do produtor, da operação e da situação documental em um dossiê estruturado pronto para protocolo no banco.",
+      "input_schema": {
+        "operacao_id": "string"
+      },
+      "output_schema": {
+        "dossie_id": "string",
+        "produtor": "object",
+        "operacao": "object",
+        "documentos": "object",
+        "enquadramento": "object",
+        "status": "pronto | pendente | em_analise",
+        "pdf_url": "string | null"
+      }
+    },
+    {
+      "id": "processar_produtor",
+      "name": "Cadastro e Processamento de Produtor",
+      "description": "Registra produtor rural com dados pessoais, rurais e de registros (CAF, CCIR, CAR, CAFIR), retornando ID e enquadramento automático.",
+      "input_schema": {
+        "nome": "string",
+        "cpf": "string",
+        "municipio": "string",
+        "uf": "string (BR state code)",
+        "renda": "number (BRL)",
+        "modulos": "number",
+        "atividade": "string",
+        "caf": "string",
+        "ccir": "string",
+        "car": "string",
+        "cafir": "string"
+      },
+      "output_schema": {
+        "produtor_id": "string",
+        "enquadramento": "PRONAF | PRONAMP | Livre",
+        "created_at": "ISO 8601"
+      }
+    }
+  ],
+  "task_lifecycle": {
+    "states": ["submitted", "working", "input_required", "completed", "failed"],
+    "async": true,
+    "polling_interval_ms": 2000
+  },
+  "authentication": {
+    "type": "api_key",
+    "header": "X-MAYA-API-Key",
+    "note": "Chave gerada por cliente no painel AgentHouse"
+  },
+  "pricing_model": {
+    "type": "per_task",
+    "unit": "dossie_processado",
+    "currency": "BRL",
+    "note": "Cobrança por dossiê gerado. Planos por volume disponíveis para cooperativas."
+  },
+  "compliance": {
+    "regulation": "MCR/BACEN — Manual de Crédito Rural",
+    "safra": "2025/2026",
+    "linhas_suportadas": ["PRONAF", "PRONAMP", "Livre"],
+    "bancos_suportados": ["Sicoob", "Banco do Brasil", "Caixa Econômica", "Bradesco"]
+  },
+  "tags": ["credito-rural", "agrorrural", "pronaf", "dossie", "brasil", "sicoob", "mcr"]
+}
