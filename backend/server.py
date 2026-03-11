@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 
 # Importar mÃ³dulo de autenticaÃ§Ã£o
-from auth import (
+from backend.auth import (
     get_password_hash, verify_password, create_access_token,
     get_current_user, require_role, UserRole, Token,
     can_create_user, can_manage_operations, can_approve_dossier,
