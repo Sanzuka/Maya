@@ -145,6 +145,124 @@ class Produtor(BaseModel):
 class ProdutorComEnquadramento(Produtor):
     enquadramento: Dict
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MODELS - MEMORIA DO PRODUTOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Vistoria(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    data: str
+    tecnico: str
+    tipo: str = "vistoria_inicial"        # vistoria_inicial | renovacao | monitoramento | emergencia
+    conformidade: str = "regular"         # regular | irregular | pendente | embargado
+    observacoes: str = ""
+    infraestrutura: Optional[str] = ""
+    area_visitada_ha: Optional[float] = None
+    fotos_realizadas: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class MemoriaCredito(BaseModel):
+    banco: str
+    linha: str
+    ano: int
+    valor: float
+    status: str = "quitado"              # quitado | em_andamento | inadimplente | renegociado
+    observacoes: Optional[str] = ""
+
+class MemoriaProdutiva(BaseModel):
+    safra: str
+    cultura: str
+    area_plantada_ha: float
+    produtividade_sc_ha: Optional[float] = None
+    producao_total_sc: Optional[float] = None
+    perdas_percent: Optional[float] = 0
+    irrigacao: bool = False
+    observacoes: Optional[str] = ""
+
+class Alerta(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tipo: str                             # doc_vencendo | embargo | irregularidade | pendencia
+    descricao: str
+    data_limite: Optional[str] = None
+    resolvido: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class MemoriaProdutor(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    prod_id: str
+
+    # Propriedade fisica
+    coordenadas: Optional[str] = ""
+    acesso_propriedade: Optional[str] = ""
+    area_total_ha: Optional[float] = None
+    area_agricola_ha: Optional[float] = None
+    topografia: Optional[str] = ""       # plana | ondulada | montanhosa
+    solo: Optional[str] = ""
+    fonte_agua: Optional[str] = ""
+    infraestrutura: Optional[str] = ""
+
+    # Registros
+    vistorias: List[Vistoria] = []
+    historico_credito: List[MemoriaCredito] = []
+    historico_produtivo: List[MemoriaProdutiva] = []
+    alertas: List[Alerta] = []
+
+    # Relacionamento
+    contato_preferencial: Optional[str] = ""
+    observacoes_gerais: Optional[str] = ""
+    consultor_responsavel: Optional[str] = ""
+
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class VistoriaCreate(BaseModel):
+    data: str
+    tecnico: str
+    tipo: str = "vistoria_inicial"
+    conformidade: str = "regular"
+    observacoes: str = ""
+    infraestrutura: Optional[str] = ""
+    area_visitada_ha: Optional[float] = None
+    fotos_realizadas: bool = False
+
+class MemoriaCredito_Create(BaseModel):
+    banco: str
+    linha: str
+    ano: int
+    valor: float
+    status: str = "quitado"
+    observacoes: Optional[str] = ""
+
+class MemoriaProdutiva_Create(BaseModel):
+    safra: str
+    cultura: str
+    area_plantada_ha: float
+    produtividade_sc_ha: Optional[float] = None
+    producao_total_sc: Optional[float] = None
+    perdas_percent: Optional[float] = 0
+    irrigacao: bool = False
+    observacoes: Optional[str] = ""
+
+class AlertaCreate(BaseModel):
+    tipo: str
+    descricao: str
+    data_limite: Optional[str] = None
+
+class MemoriaProdutorUpdate(BaseModel):
+    coordenadas: Optional[str] = None
+    acesso_propriedade: Optional[str] = None
+    area_total_ha: Optional[float] = None
+    area_agricola_ha: Optional[float] = None
+    topografia: Optional[str] = None
+    solo: Optional[str] = None
+    fonte_agua: Optional[str] = None
+    infraestrutura: Optional[str] = None
+    contato_preferencial: Optional[str] = None
+    observacoes_gerais: Optional[str] = None
+    consultor_responsavel: Optional[str] = None
+
+
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # MODELS - OPERAÃÃO
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -672,6 +790,97 @@ async def buscar_documentos(id: str):
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # ROUTES - DASHBOARD
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTES - PRODUTORES (LISTAGEM)
+# ─────────────────────────────────────────────────────────────────────────────
+@api_router.get("/produtores/{prod_id}/memoria", response_model=MemoriaProdutor)
+async def get_memoria(prod_id: str):
+    mem = await db.memoria_produtores.find_one({"prod_id": prod_id}, {"_id": 0})
+    if not mem:
+        # Criar memoria vazia automaticamente
+        nova = MemoriaProdutor(prod_id=prod_id)
+        await db.memoria_produtores.insert_one(nova.model_dump())
+        return nova
+    return deserialize_datetime(mem)
+
+@api_router.patch("/produtores/{prod_id}/memoria")
+async def atualizar_memoria(prod_id: str, update: MemoriaProdutorUpdate):
+    dados = {k: v for k, v in update.model_dump().items() if v is not None}
+    dados["updated_at"] = datetime.now(timezone.utc)
+    existing = await db.memoria_produtores.find_one({"prod_id": prod_id})
+    if not existing:
+        nova = MemoriaProdutor(prod_id=prod_id, **dados)
+        await db.memoria_produtores.insert_one(nova.model_dump())
+    else:
+        await db.memoria_produtores.update_one({"prod_id": prod_id}, {"$set": dados})
+    mem = await db.memoria_produtores.find_one({"prod_id": prod_id}, {"_id": 0})
+    return deserialize_datetime(mem)
+
+@api_router.post("/produtores/{prod_id}/vistorias")
+async def add_vistoria(prod_id: str, v: VistoriaCreate):
+    nova = Vistoria(**v.model_dump())
+    existing = await db.memoria_produtores.find_one({"prod_id": prod_id})
+    if not existing:
+        mem = MemoriaProdutor(prod_id=prod_id, vistorias=[nova])
+        await db.memoria_produtores.insert_one(mem.model_dump())
+    else:
+        await db.memoria_produtores.update_one(
+            {"prod_id": prod_id},
+            {"$push": {"vistorias": nova.model_dump()}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+        )
+    return {"success": True, "id": nova.id}
+
+@api_router.post("/produtores/{prod_id}/historico_credito")
+async def add_historico_credito(prod_id: str, hc: MemoriaCredito_Create):
+    novo = MemoriaCredito(**hc.model_dump())
+    existing = await db.memoria_produtores.find_one({"prod_id": prod_id})
+    if not existing:
+        mem = MemoriaProdutor(prod_id=prod_id, historico_credito=[novo])
+        await db.memoria_produtores.insert_one(mem.model_dump())
+    else:
+        await db.memoria_produtores.update_one(
+            {"prod_id": prod_id},
+            {"$push": {"historico_credito": novo.model_dump()}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+        )
+    return {"success": True}
+
+@api_router.post("/produtores/{prod_id}/historico_produtivo")
+async def add_historico_produtivo(prod_id: str, hp: MemoriaProdutiva_Create):
+    novo = MemoriaProdutiva(**hp.model_dump())
+    existing = await db.memoria_produtores.find_one({"prod_id": prod_id})
+    if not existing:
+        mem = MemoriaProdutor(prod_id=prod_id, historico_produtivo=[novo])
+        await db.memoria_produtores.insert_one(mem.model_dump())
+    else:
+        await db.memoria_produtores.update_one(
+            {"prod_id": prod_id},
+            {"$push": {"historico_produtivo": novo.model_dump()}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+        )
+    return {"success": True}
+
+@api_router.post("/produtores/{prod_id}/alertas")
+async def add_alerta(prod_id: str, a: AlertaCreate):
+    novo = Alerta(**a.model_dump())
+    existing = await db.memoria_produtores.find_one({"prod_id": prod_id})
+    if not existing:
+        mem = MemoriaProdutor(prod_id=prod_id, alertas=[novo])
+        await db.memoria_produtores.insert_one(mem.model_dump())
+    else:
+        await db.memoria_produtores.update_one(
+            {"prod_id": prod_id},
+            {"$push": {"alertas": novo.model_dump()}, "$set": {"updated_at": datetime.now(timezone.utc)}}
+        )
+    return {"success": True, "id": novo.id}
+
+@api_router.patch("/produtores/{prod_id}/alertas/{alerta_id}/resolver")
+async def resolver_alerta(prod_id: str, alerta_id: str):
+    await db.memoria_produtores.update_one(
+        {"prod_id": prod_id, "alertas.id": alerta_id},
+        {"$set": {"alertas.$.resolvido": True, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {"success": True}
+
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
 async def obter_estatisticas():
     """Obter estatÃ­sticas para o dashboard"""
