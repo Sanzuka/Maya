@@ -527,6 +527,10 @@ function CadastroProd({ setScreen }) {
 function Operacoes({ setScreen, setSelectedOp }) {
   const [filter, setFilter] = useState("todas");
   const [form, setForm] = useState({ prod_id:"", linha:"PRONAF", modalidade:"Custeio Agrícola", valor:"", cultura:"", banco:"Sicoob" });
+  const [glebaForm, setGlebaForm] = useState({ codigo_car:"", area_contratada_ha:"", municipio_ibge:"", descricao:"", vertices_raw:"", identificacao:1 });
+  const [glebaAlerta, setGlebaAlerta] = useState(null);
+  const [verificandoGleba, setVerificandoGleba] = useState(false);
+  const [showGleba, setShowGleba] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [operacoes, setOperacoes] = useState([]);
   const [produtores, setProdutores] = useState([]);
@@ -561,23 +565,84 @@ function Operacoes({ setScreen, setSelectedOp }) {
     : renda <= 1760000 ? {label:"PRONAMP",color:"var(--gold)",desc:"Limite R$1,5M · Taxa 8% a.a."}
     : {label:"Livre",color:"var(--blue)",desc:"Crédito livre"};
 
+  // Parsear vértices SIRGAS2000 da entrada livre (lat,lon por linha)
+  const parseVertices = (raw) => {
+    if (!raw || !raw.trim()) return [];
+    return raw.trim().split("\n").map((line, i) => {
+      const parts = line.trim().split(/[,;\s]+/);
+      if (parts.length < 2) return null;
+      const lat = parseFloat(parts[0]);
+      const lon = parseFloat(parts[1]);
+      const alt = parts[2] ? parseFloat(parts[2]) : null;
+      if (isNaN(lat) || isNaN(lon)) return null;
+      return { seq: i + 1, lat: parseFloat(lat.toFixed(6)), lon: parseFloat(lon.toFixed(6)), alt };
+    }).filter(Boolean);
+  };
+
+  // Verificação pré-contratação (MCR 3-6-3-b)
+  const verificarGleba = async () => {
+    if (!form.prod_id || !glebaForm.codigo_car) return;
+    setVerificandoGleba(true);
+    setGlebaAlerta(null);
+    try {
+      const params = new URLSearchParams({
+        prod_id: form.prod_id,
+        codigo_car: glebaForm.codigo_car,
+        area_contratada_ha: glebaForm.area_contratada_ha || 0
+      });
+      const r = await axios.post(`${API}/verificar-gleba?${params}`);
+      setGlebaAlerta(r.data);
+    } catch(e) {
+      console.error(e);
+    }
+    setVerificandoGleba(false);
+  };
+
   const criarOperacao = async () => {
     setError("");
     setSuccess("");
     try {
-      await axios.post(`${API}/operacoes`, {
+      const vertices = parseVertices(glebaForm.vertices_raw);
+      const gleba = showGleba ? {
+        identificacao: parseInt(glebaForm.identificacao) || 1,
+        codigo_car: glebaForm.codigo_car || "",
+        area_contratada_ha: parseFloat(glebaForm.area_contratada_ha) || null,
+        municipio_ibge: glebaForm.municipio_ibge || "",
+        descricao: glebaForm.descricao || "",
+        vertices: vertices
+      } : null;
+
+      const res = await axios.post(`${API}/operacoes`, {
         prod_id: form.prod_id,
         linha: form.linha,
         modalidade: form.modalidade,
         valor: parseFloat(form.valor) || 0,
         cultura: form.cultura,
-        banco: form.banco
+        banco: form.banco,
+        gleba
       });
-      setSuccess("Operação criada com sucesso!");
+
+      // Exibir alerta de sobreposição se houver
+      if (res.data?.alerta_gleba) {
+        const al = res.data.alerta_gleba;
+        if (al.status === "conflito") {
+          setSuccess("Operação criada com ALERTA: " + al.conflitos.map(c=>c.referencia_mcr||c.tipo).join("; "));
+        } else if (al.status?.includes("tolerancia")) {
+          setSuccess("Operação criada — verificar tolerância de área MCR: " + al.status);
+        } else {
+          setSuccess("Operação criada com sucesso!");
+        }
+      } else {
+        setSuccess("Operação criada com sucesso!");
+      }
+
       setShowForm(false);
+      setShowGleba(false);
+      setGlebaAlerta(null);
       setForm({ prod_id:"", linha:"PRONAF", modalidade:"Custeio Agrícola", valor:"", cultura:"", banco:"Sicoob" });
+      setGlebaForm({ codigo_car:"", area_contratada_ha:"", municipio_ibge:"", descricao:"", vertices_raw:"", identificacao:1 });
       carregarDados();
-      setTimeout(() => setSuccess(""), 3000);
+      setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       setError("Erro ao criar operação: " + (err.response?.data?.detail || err.message));
     }
@@ -646,16 +711,113 @@ function Operacoes({ setScreen, setSelectedOp }) {
               </select>
             </div>
           </div>
-          <div className="form-row">
+          <div className="form-row" style={{marginBottom:12}}>
             <div className="fg">
               <label>Valor Solicitado (R$)</label>
               <input type="number" value={form.valor} onChange={e=>set("valor",e.target.value)} placeholder="Ex: 85000"/>
             </div>
-            <div style={{display:"flex",alignItems:"flex-end",paddingBottom:1}}>
-              <button className="btn btn-green" style={{width:"100%",justifyContent:"center"}} onClick={criarOperacao}>
-                <Icon d={IC.ops} size={11}/> CRIAR OPERAÇÃO
+          </div>
+
+          {/* SEÇÃO GLEBA — MCR 2-1-2 / SICOR Campo 25 */}
+          <div style={{borderTop:"1px solid var(--bdr)",paddingTop:12,marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showGleba?10:0}}>
+              <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"var(--dim)"}}>
+                LOCALIZAÇÃO DA GLEBA <span style={{color:"var(--gold)",fontSize:9,marginLeft:6}}>MCR 2-1-2 · SICOR Campo 25</span>
+              </div>
+              <button className={`btn ${showGleba?"btn-ghost":"btn-ghost"}`} style={{fontSize:9,padding:"3px 10px"}}
+                onClick={()=>setShowGleba(!showGleba)}>
+                {showGleba ? "▲ OCULTAR" : "▼ INFORMAR GLEBA"}
               </button>
             </div>
+
+            {showGleba && (
+              <div>
+                <div className="form-row3" style={{marginBottom:8}}>
+                  <div className="fg">
+                    <label>Código CAR da Gleba</label>
+                    <input value={glebaForm.codigo_car}
+                      onChange={e=>setGlebaForm(f=>({...f,codigo_car:e.target.value}))}
+                      placeholder="ES-3200300-..." style={{fontFamily:"monospace",fontSize:11}}/>
+                  </div>
+                  <div className="fg">
+                    <label>Área Contratada (ha)</label>
+                    <input type="number" step="0.01" value={glebaForm.area_contratada_ha}
+                      onChange={e=>setGlebaForm(f=>({...f,area_contratada_ha:e.target.value}))}
+                      placeholder="Ex: 3.5"/>
+                  </div>
+                  <div className="fg">
+                    <label>Cód. Município IBGE</label>
+                    <input value={glebaForm.municipio_ibge}
+                      onChange={e=>setGlebaForm(f=>({...f,municipio_ibge:e.target.value}))}
+                      placeholder="Ex: 3200300" style={{fontFamily:"monospace",fontSize:11}}/>
+                  </div>
+                </div>
+
+                <div style={{marginBottom:8}}>
+                  <label style={{fontSize:10,color:"var(--dim)",fontWeight:600,letterSpacing:.5,display:"block",marginBottom:4}}>
+                    VÉRTICES DO PERÍMETRO — SIRGAS2000 (uma linha por ponto: lat, lon, alt)
+                  </label>
+                  <textarea
+                    value={glebaForm.vertices_raw}
+                    onChange={e=>setGlebaForm(f=>({...f,vertices_raw:e.target.value}))}
+                    placeholder={"-19.420512, -40.552301, 680\n-19.421045, -40.551890, 682\n-19.420800, -40.551200, 679\n..."}
+                    rows={5}
+                    style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,
+                      padding:"7px 10px",fontSize:11,color:"var(--text)",fontFamily:"monospace",
+                      boxSizing:"border-box",resize:"vertical"}}/>
+                  <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>
+                    Sistema de referência: SIRGAS2000 · 6 casas decimais · máx. 100 pontos por gleba · altitude em metros (opcional)
+                  </div>
+                </div>
+
+                <div style={{marginBottom:8}}>
+                  <label style={{fontSize:10,color:"var(--dim)",fontWeight:600,letterSpacing:.5,display:"block",marginBottom:4}}>DESCRIÇÃO DA GLEBA</label>
+                  <input value={glebaForm.descricao}
+                    onChange={e=>setGlebaForm(f=>({...f,descricao:e.target.value}))}
+                    placeholder="Ex: Talhão norte — área de café arábica, terreno ondulado"
+                    style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"6px 9px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                </div>
+
+                {/* Botão verificação pré-contratação */}
+                {form.prod_id && glebaForm.codigo_car && (
+                  <div style={{marginBottom:8}}>
+                    <button className="btn btn-ghost" style={{fontSize:9,padding:"4px 12px"}}
+                      onClick={verificarGleba} disabled={verificandoGleba}>
+                      <Icon d={IC.search} size={10}/> {verificandoGleba ? "VERIFICANDO..." : "VERIFICAR SOBREPOSIÇÃO (MCR 3-6-3-b)"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Resultado da verificação */}
+                {glebaAlerta && (
+                  <div style={{
+                    padding:"10px 14px", borderRadius:4, marginBottom:8, fontSize:11,
+                    background: glebaAlerta.status==="livre" ? "rgba(109,181,128,.08)" : "rgba(220,38,38,.08)",
+                    border: `1px solid ${glebaAlerta.status==="livre" ? "rgba(109,181,128,.3)" : "rgba(220,38,38,.3)"}`,
+                    color: glebaAlerta.status==="livre" ? "var(--green)" : "var(--red)"
+                  }}>
+                    <div style={{fontWeight:700,marginBottom:4}}>
+                      {glebaAlerta.status==="livre" ? "✓ Gleba disponível para contratação" : "⚠ Impedimento detectado"}
+                    </div>
+                    {glebaAlerta.area_disponivel_ha != null &&
+                      <div style={{fontSize:10,color:"var(--dim)"}}>Área disponível no imóvel: {glebaAlerta.area_disponivel_ha} ha</div>}
+                    {glebaAlerta.conflitos?.map((c,i) => (
+                      <div key={i} style={{fontSize:10,marginTop:4,color:"var(--mid)"}}>
+                        • {c.tipo?.replace(/_/g," ")} {c.operacao_id ? `— Op. ${c.operacao_id}` : ""}
+                        {c.referencia_mcr && <span style={{color:"var(--dim)"}}> | {c.referencia_mcr}</span>}
+                      </div>
+                    ))}
+                    <div style={{fontSize:9,color:"var(--dim)",marginTop:4}}>{glebaAlerta.orientacao}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{display:"flex",justifyContent:"flex-end"}}>
+            <button className="btn btn-green" onClick={criarOperacao}>
+              <Icon d={IC.ops} size={11}/> CRIAR OPERAÇÃO
+            </button>
           </div>
         </div>
       )}
