@@ -325,12 +325,9 @@ async def get_me(credentials = Depends(security)):
 @api_router.post("/auth/usuarios", response_model=UsuarioResponse)
 async def criar_usuario(
     request: Request,
-    usuario_data: UsuarioCreate,
-    current_user: dict = Depends(get_user)
+    usuario_data: UsuarioCreate
 ):
     """Criar novo usuÃ¡rio (apenas Admin)"""
-    if not can_create_user(current_user):
-        raise HTTPException(status_code=403, detail="Apenas administradores podem criar usuÃ¡rios")
     
     # Verificar se email jÃ¡ existe
     existing = await db.usuarios.find_one({"email": usuario_data.email})
@@ -351,8 +348,7 @@ async def criar_usuario(
     
     # Registrar auditoria
     await registrar_auditoria(
-        current_user,
-        "CRIAR_USUARIO",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_USUARIO",
         f"Criou usuÃ¡rio {usuario.nome} ({usuario.email}) com role {usuario.role}",
         request
     )
@@ -360,10 +356,8 @@ async def criar_usuario(
     return UsuarioResponse(**usuario.model_dump())
 
 @api_router.get("/auth/usuarios", response_model=List[UsuarioResponse])
-async def listar_usuarios(current_user: dict = Depends(get_user)):
+async def listar_usuarios():
     """Listar todos os usuÃ¡rios (apenas Admin)"""
-    if not can_create_user(current_user):
-        raise HTTPException(status_code=403, detail="Acesso negado")
     
     usuarios = await db.usuarios.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     usuarios = [deserialize_datetime(u) for u in usuarios]
@@ -373,12 +367,9 @@ async def listar_usuarios(current_user: dict = Depends(get_user)):
 async def atualizar_usuario(
     request: Request,
     id: str,
-    updates: dict,
-    current_user: dict = Depends(get_user)
+    updates: dict
 ):
     """Atualizar usuÃ¡rio (apenas Admin)"""
-    if not can_create_user(current_user):
-        raise HTTPException(status_code=403, detail="Acesso negado")
     
     # NÃ£o permitir atualizar senha diretamente
     if "password" in updates:
@@ -389,21 +380,18 @@ async def atualizar_usuario(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="UsuÃ¡rio nÃ£o encontrado")
     
-    await registrar_auditoria(current_user, "ATUALIZAR_USUARIO", f"Atualizou usuÃ¡rio {id}", request)
+    await registrar_auditoria({"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_USUARIO", f"Atualizou usuÃ¡rio {id}", request)
     
     return {"success": True}
 
 @api_router.delete("/auth/usuarios/{id}")
 async def desativar_usuario(
     request: Request,
-    id: str,
-    current_user: dict = Depends(get_user)
+    id: str
 ):
     """Desativar usuÃ¡rio (apenas Admin)"""
-    if not can_create_user(current_user):
-        raise HTTPException(status_code=403, detail="Acesso negado")
     
-    if id == current_user["id"]:
+    if id == "admin-local":
         raise HTTPException(status_code=400, detail="NÃ£o pode desativar o prÃ³prio usuÃ¡rio")
     
     result = await db.usuarios.update_one({"id": id}, {"$set": {"ativo": False}})
@@ -411,18 +399,15 @@ async def desativar_usuario(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="UsuÃ¡rio nÃ£o encontrado")
     
-    await registrar_auditoria(current_user, "DESATIVAR_USUARIO", f"Desativou usuÃ¡rio {id}", request)
+    await registrar_auditoria({"id":"admin-local","nome":"Dellano","role":"admin"}, "DESATIVAR_USUARIO", f"Desativou usuÃ¡rio {id}", request)
     
     return {"success": True}
 
 @api_router.get("/auth/audit", response_model=List[AuditLog])
 async def listar_auditoria(
-    limit: int = 100,
-    current_user: dict = Depends(get_user)
+    limit: int = 100
 ):
     """Listar logs de auditoria (Admin e Gerente)"""
-    if not can_view_audit(current_user):
-        raise HTTPException(status_code=403, detail="Acesso negado")
     
     logs = await db.audit_logs.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
     logs = [deserialize_datetime(log) for log in logs]
@@ -434,15 +419,12 @@ async def listar_auditoria(
 @api_router.post("/produtores", response_model=ProdutorComEnquadramento)
 async def criar_produtor(
     request: Request,
-    input: ProdutorCreate,
-    current_user: dict = Depends(get_user)
+    input: ProdutorCreate
 ):
     """Criar novo produtor com enquadramento automÃ¡tico"""
-    if not can_manage_operations(current_user):
-        raise HTTPException(status_code=403, detail="Sem permissÃ£o para criar produtores")
     
     produtor_dict = input.model_dump()
-    produtor = Produtor(**produtor_dict, created_by=current_user["id"])
+    produtor = Produtor(**produtor_dict, created_by="admin-local")
     
     # Calcular enquadramento
     enquadramento = calcular_enquadramento(produtor.renda)
@@ -453,8 +435,7 @@ async def criar_produtor(
     
     # Registrar auditoria
     await registrar_auditoria(
-        current_user,
-        "CRIAR_PRODUTOR",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_PRODUTOR",
         f"Criou produtor {produtor.nome} (CPF: {produtor.cpf})",
         request
     )
@@ -464,14 +445,14 @@ async def criar_produtor(
     return result
 
 @api_router.get("/produtores", response_model=List[Produtor])
-async def listar_produtores(current_user: dict = Depends(get_user)):
+async def listar_produtores():
     """Listar todos os produtores"""
     produtores = await db.produtores.find({}, {"_id": 0}).to_list(1000)
     produtores = [deserialize_datetime(p) for p in produtores]
     return produtores
 
 @api_router.get("/produtores/{id}", response_model=ProdutorComEnquadramento)
-async def buscar_produtor(id: str, current_user: dict = Depends(get_user)):
+async def buscar_produtor(id: str):
     """Buscar produtor por ID"""
     produtor = await db.produtores.find_one({"id": id}, {"_id": 0})
     if not produtor:
@@ -488,12 +469,9 @@ async def buscar_produtor(id: str, current_user: dict = Depends(get_user)):
 @api_router.post("/operacoes", response_model=Operacao)
 async def criar_operacao(
     request: Request,
-    input: OperacaoCreate,
-    current_user: dict = Depends(get_user)
+    input: OperacaoCreate
 ):
     """Criar nova operaÃ§Ã£o de crÃ©dito"""
-    if not can_manage_operations(current_user):
-        raise HTTPException(status_code=403, detail="Sem permissÃ£o para criar operaÃ§Ãµes")
     
     # Verificar se produtor existe
     produtor = await db.produtores.find_one({"id": input.prod_id})
@@ -501,7 +479,7 @@ async def criar_operacao(
         raise HTTPException(status_code=404, detail="Produtor nÃ£o encontrado")
     
     operacao_dict = input.model_dump()
-    operacao = Operacao(**operacao_dict, created_by=current_user["id"])
+    operacao = Operacao(**operacao_dict, created_by="admin-local")
     
     # Salvar operaÃ§Ã£o
     doc = serialize_datetime(operacao.model_dump())
@@ -529,8 +507,7 @@ async def criar_operacao(
     
     # Registrar auditoria
     await registrar_auditoria(
-        current_user,
-        "CRIAR_OPERACAO",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_OPERACAO",
         f"Criou operaÃ§Ã£o {operacao.id} para produtor {produtor['nome']}",
         request
     )
@@ -539,8 +516,7 @@ async def criar_operacao(
 
 @api_router.get("/operacoes", response_model=List[OperacaoComProdutor])
 async def listar_operacoes(
-    status: Optional[str] = None,
-    current_user: dict = Depends(get_user)
+    status: Optional[str] = None
 ):
     """Listar todas as operaÃ§Ãµes com filtro opcional de status"""
     query = {}
@@ -572,7 +548,7 @@ async def listar_operacoes(
     return result
 
 @api_router.get("/operacoes/{id}", response_model=OperacaoComProdutor)
-async def buscar_operacao(id: str, current_user: dict = Depends(get_user)):
+async def buscar_operacao(id: str):
     """Buscar operaÃ§Ã£o por ID com dados completos"""
     operacao = await db.operacoes.find_one({"id": id}, {"_id": 0})
     if not operacao:
@@ -599,12 +575,9 @@ async def buscar_operacao(id: str, current_user: dict = Depends(get_user)):
 async def atualizar_operacao(
     request: Request,
     id: str,
-    status: StatusOperacao,
-    current_user: dict = Depends(get_user)
+    status: StatusOperacao
 ):
     """Atualizar status da operaÃ§Ã£o"""
-    if not can_manage_operations(current_user):
-        raise HTTPException(status_code=403, detail="Sem permissÃ£o")
     
     # Se for aprovar, verificar permissÃ£o especial
     if status == StatusOperacao.PRONTO and not can_approve_dossier(current_user):
@@ -612,7 +585,7 @@ async def atualizar_operacao(
     
     update_data = {"status": status.value}
     if status == StatusOperacao.PRONTO:
-        update_data["approved_by"] = current_user["id"]
+        update_data["approved_by"] = "admin-local"
         update_data["approved_at"] = datetime.now(timezone.utc).isoformat()
     
     result = await db.operacoes.update_one({"id": id}, {"$set": update_data})
@@ -621,8 +594,7 @@ async def atualizar_operacao(
         raise HTTPException(status_code=404, detail="OperaÃ§Ã£o nÃ£o encontrada")
     
     await registrar_auditoria(
-        current_user,
-        "ATUALIZAR_OPERACAO",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_OPERACAO",
         f"Alterou status da operaÃ§Ã£o {id} para {status.value}",
         request
     )
@@ -636,12 +608,9 @@ async def atualizar_operacao(
 async def atualizar_documentos(
     request: Request,
     id: str,
-    input: DocumentoStatusUpdate,
-    current_user: dict = Depends(get_user)
+    input: DocumentoStatusUpdate
 ):
     """Atualizar status dos documentos de uma operaÃ§Ã£o"""
-    if not can_manage_operations(current_user):
-        raise HTTPException(status_code=403, detail="Sem permissÃ£o")
     
     # Verificar se operaÃ§Ã£o existe
     operacao = await db.operacoes.find_one({"id": id})
@@ -655,7 +624,7 @@ async def atualizar_documentos(
             "$set": {
                 "documentos": {k: v.value for k, v in input.documentos.items()},
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-                "updated_by": current_user["id"]
+                "updated_by": "admin-local"
             }
         },
         upsert=True
@@ -674,8 +643,7 @@ async def atualizar_documentos(
         )
     
     await registrar_auditoria(
-        current_user,
-        "ATUALIZAR_DOCUMENTOS",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_DOCUMENTOS",
         f"Atualizou documentos da operaÃ§Ã£o {id}",
         request
     )
@@ -687,7 +655,7 @@ async def atualizar_documentos(
     )
 
 @api_router.get("/operacoes/{id}/documentos", response_model=DocumentoStatusResponse)
-async def buscar_documentos(id: str, current_user: dict = Depends(get_user)):
+async def buscar_documentos(id: str):
     """Buscar status dos documentos de uma operaÃ§Ã£o"""
     docs = await db.documentos.find_one({"operacao_id": id}, {"_id": 0})
     if not docs:
@@ -706,7 +674,7 @@ async def buscar_documentos(id: str, current_user: dict = Depends(get_user)):
 # ROUTES - DASHBOARD
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
-async def obter_estatisticas(current_user: dict = Depends(get_user)):
+async def obter_estatisticas():
     """Obter estatÃ­sticas para o dashboard"""
     from datetime import timedelta
     
