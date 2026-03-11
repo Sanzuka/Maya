@@ -1029,6 +1029,466 @@ function Dossie({ setScreen, selectedOp }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SCREEN: GERENCIAR USUÁRIOS (ADMIN)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCREEN: LISTA DE PRODUTORES + MEMÓRIA
+// ─────────────────────────────────────────────────────────────────────────────
+function ListaProdutores({ setScreen, setSelectedProd }) {
+  const [produtores, setProdutores] = React.useState([]);
+  const [filtro, setFiltro] = React.useState("");
+  const [selected, setSelected] = React.useState(null);
+  const [memoria, setMemoria] = React.useState(null);
+  const [aba, setAba] = React.useState("propriedade");
+  const [loading, setLoading] = React.useState(true);
+  const [memForm, setMemForm] = React.useState({});
+  const [vForm, setVForm] = React.useState({ data: new Date().toISOString().slice(0,10), tecnico:"", tipo:"vistoria_inicial", conformidade:"regular", observacoes:"", infraestrutura:"", area_visitada_ha:"", fotos_realizadas:false });
+  const [hcForm, setHcForm] = React.useState({ banco:"Sicoob", linha:"PRONAF", ano: new Date().getFullYear(), valor:"", status:"quitado", observacoes:"" });
+  const [hpForm, setHpForm] = React.useState({ safra:"", cultura:"", area_plantada_ha:"", produtividade_sc_ha:"", producao_total_sc:"", perdas_percent:0, irrigacao:false, observacoes:"" });
+  const [alForm, setAlForm] = React.useState({ tipo:"doc_vencendo", descricao:"", data_limite:"" });
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    axios.get(`${API}/produtores`).then(r => { setProdutores(r.data); setLoading(false); });
+  }, []);
+
+  React.useEffect(() => {
+    if (!selected) return;
+    axios.get(`${API}/produtores/${selected.id}/memoria`).then(r => {
+      setMemoria(r.data);
+      setMemForm({
+        coordenadas: r.data.coordenadas||"", acesso_propriedade: r.data.acesso_propriedade||"",
+        area_total_ha: r.data.area_total_ha||"", area_agricola_ha: r.data.area_agricola_ha||"",
+        topografia: r.data.topografia||"", solo: r.data.solo||"",
+        fonte_agua: r.data.fonte_agua||"", infraestrutura: r.data.infraestrutura||"",
+        contato_preferencial: r.data.contato_preferencial||"",
+        observacoes_gerais: r.data.observacoes_gerais||"",
+        consultor_responsavel: r.data.consultor_responsavel||""
+      });
+    });
+  }, [selected]);
+
+  const filtrados = produtores.filter(p =>
+    p.nome.toLowerCase().includes(filtro.toLowerCase()) ||
+    p.cpf.includes(filtro) ||
+    p.municipio?.toLowerCase().includes(filtro.toLowerCase())
+  );
+
+  const ENQS = { PRONAF: "g", PRONAMP: "gold", Livre: "r" };
+
+  const salvarPropriedade = async () => {
+    setSaving(true);
+    const clean = {};
+    Object.entries(memForm).forEach(([k,v]) => { if (v !== "" && v !== null) clean[k] = v; });
+    await axios.patch(`${API}/produtores/${selected.id}/memoria`, clean);
+    const r = await axios.get(`${API}/produtores/${selected.id}/memoria`);
+    setMemoria(r.data);
+    setSaving(false);
+  };
+
+  const addVistoria = async () => {
+    setSaving(true);
+    const d = {...vForm};
+    if (d.area_visitada_ha) d.area_visitada_ha = parseFloat(d.area_visitada_ha);
+    await axios.post(`${API}/produtores/${selected.id}/vistorias`, d);
+    const r = await axios.get(`${API}/produtores/${selected.id}/memoria`);
+    setMemoria(r.data);
+    setVForm({ data: new Date().toISOString().slice(0,10), tecnico:"", tipo:"vistoria_inicial", conformidade:"regular", observacoes:"", infraestrutura:"", area_visitada_ha:"", fotos_realizadas:false });
+    setSaving(false);
+  };
+
+  const addCredito = async () => {
+    setSaving(true);
+    const d = {...hcForm, ano: parseInt(hcForm.ano), valor: parseFloat(hcForm.valor)};
+    await axios.post(`${API}/produtores/${selected.id}/historico_credito`, d);
+    const r = await axios.get(`${API}/produtores/${selected.id}/memoria`);
+    setMemoria(r.data);
+    setHcForm({ banco:"Sicoob", linha:"PRONAF", ano: new Date().getFullYear(), valor:"", status:"quitado", observacoes:"" });
+    setSaving(false);
+  };
+
+  const addProdutivo = async () => {
+    setSaving(true);
+    const d = {...hpForm, area_plantada_ha: parseFloat(hpForm.area_plantada_ha)};
+    if (d.produtividade_sc_ha) d.produtividade_sc_ha = parseFloat(d.produtividade_sc_ha);
+    if (d.producao_total_sc) d.producao_total_sc = parseFloat(d.producao_total_sc);
+    await axios.post(`${API}/produtores/${selected.id}/historico_produtivo`, d);
+    const r = await axios.get(`${API}/produtores/${selected.id}/memoria`);
+    setMemoria(r.data);
+    setHpForm({ safra:"", cultura:"", area_plantada_ha:"", produtividade_sc_ha:"", producao_total_sc:"", perdas_percent:0, irrigacao:false, observacoes:"" });
+    setSaving(false);
+  };
+
+  const addAlerta = async () => {
+    setSaving(true);
+    await axios.post(`${API}/produtores/${selected.id}/alertas`, alForm);
+    const r = await axios.get(`${API}/produtores/${selected.id}/memoria`);
+    setMemoria(r.data);
+    setAlForm({ tipo:"doc_vencendo", descricao:"", data_limite:"" });
+    setSaving(false);
+  };
+
+  const resolverAlerta = async (alId) => {
+    await axios.patch(`${API}/produtores/${selected.id}/alertas/${alId}/resolver`);
+    const r = await axios.get(`${API}/produtores/${selected.id}/memoria`);
+    setMemoria(r.data);
+  };
+
+  const conformidadeCor = { regular:"var(--green)", irregular:"var(--red)", pendente:"var(--gold)", embargado:"var(--red)" };
+  const tipoCor = { doc_vencendo:"var(--gold)", embargo:"var(--red)", irregularidade:"var(--red)", pendencia:"var(--gold)" };
+
+  if (loading) return <div style={{padding:32,color:"var(--dim)"}}>Carregando produtores...</div>;
+
+  return (
+    <div style={{display:"flex",gap:0,height:"100%",overflow:"hidden"}}>
+      {/* COLUNA LISTA */}
+      <div style={{width:320,minWidth:280,borderRight:"1px solid var(--bdr)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{padding:"16px 14px 10px",borderBottom:"1px solid var(--bdr)"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--text)",letterSpacing:1,marginBottom:8}}>PRODUTORES CADASTRADOS</div>
+          <input
+            value={filtro} onChange={e=>setFiltro(e.target.value)}
+            placeholder="Buscar por nome, CPF ou município..."
+            style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"6px 10px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}
+          />
+          <div style={{fontSize:10,color:"var(--dim)",marginTop:6}}>{filtrados.length} produtor{filtrados.length!==1?"es":""}</div>
+        </div>
+        <div style={{overflowY:"auto",flex:1}}>
+          {filtrados.map(p => {
+            const eq = p.enquadramento?.label || "?";
+            const cor = ENQS[eq] || "";
+            return (
+              <div
+                key={p.id}
+                onClick={()=>setSelected(p)}
+                style={{padding:"10px 14px",borderBottom:"1px solid var(--bdr2)",cursor:"pointer",background:selected?.id===p.id?"var(--bg3)":"transparent",transition:"background .15s"}}
+              >
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{p.nome}</div>
+                  <span className={`lb ${cor}`} style={{fontSize:9}}>{eq}</span>
+                </div>
+                <div style={{fontSize:11,color:"var(--dim)",marginTop:2}}>{p.cpf} · {p.municipio||"–"} {p.uf}</div>
+                <div style={{fontSize:11,color:"var(--dim)"}}>{p.atividade} · {p.modulos} módulos</div>
+              </div>
+            );
+          })}
+          {filtrados.length === 0 && <div style={{padding:24,color:"var(--dim)",fontSize:12,textAlign:"center"}}>Nenhum produtor encontrado</div>}
+        </div>
+        <div style={{padding:12,borderTop:"1px solid var(--bdr)"}}>
+          <button className="btn btn-green" style={{width:"100%"}} onClick={()=>setScreen("cadastro")}>
+            <Icon d={IC.users} size={11}/> + NOVO PRODUTOR
+          </button>
+        </div>
+      </div>
+
+      {/* COLUNA DETALHE */}
+      {selected ? (
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          {/* Header do produtor */}
+          <div style={{padding:"14px 20px",borderBottom:"1px solid var(--bdr)",background:"var(--bg2)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:800,color:"var(--text)",fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:1}}>{selected.nome}</div>
+                <div style={{fontSize:12,color:"var(--dim)",marginTop:2}}>CPF: {selected.cpf} · {selected.municipio} {selected.uf} · {selected.atividade}</div>
+                <div style={{fontSize:12,color:"var(--dim)"}}>Renda: R$ {Number(selected.renda).toLocaleString("pt-BR")} · {selected.modulos} módulos fiscais</div>
+              </div>
+              <button className="btn btn-gold" style={{fontSize:10}} onClick={()=>{setSelectedProd && setSelectedProd(selected.id); setScreen("cadastro");}}>
+                <Icon d={IC.edit} size={10}/> EDITAR
+              </button>
+            </div>
+            {/* Abas */}
+            <div style={{display:"flex",gap:4,marginTop:12}}>
+              {[["propriedade","Propriedade"],["vistorias","Vistorias"],["credito","Histórico Crédito"],["produtivo","Histórico Produtivo"],["alertas","Alertas"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setAba(k)}
+                  style={{padding:"4px 12px",fontSize:10,fontWeight:700,letterSpacing:.5,border:"1px solid",borderRadius:3,cursor:"pointer",
+                    background: aba===k?"var(--red)":"transparent",
+                    color: aba===k?"#fff":"var(--dim)",
+                    borderColor: aba===k?"var(--red)":"var(--bdr)"}}>
+                  {l}
+                  {k==="alertas" && memoria?.alertas?.filter(a=>!a.resolvido).length > 0 &&
+                    <span style={{marginLeft:4,background:"var(--red)",color:"#fff",borderRadius:8,padding:"0 5px",fontSize:9}}>
+                      {memoria.alertas.filter(a=>!a.resolvido).length}
+                    </span>
+                  }
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Conteúdo das abas */}
+          <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
+            {!memoria && <div style={{color:"var(--dim)",fontSize:12}}>Carregando memória...</div>}
+
+            {/* ABA: PROPRIEDADE */}
+            {aba==="propriedade" && memoria && (
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {[
+                  ["coordenadas","Coordenadas GPS","text","Ex: -19.4205, -40.5523"],
+                  ["acesso_propriedade","Acesso à Propriedade","text","Ex: ES-080 km 12, porteira azul"],
+                  ["area_total_ha","Área Total (ha)","number",""],
+                  ["area_agricola_ha","Área Agrícola (ha)","number",""],
+                  ["topografia","Topografia","text","plana / ondulada / montanhosa"],
+                  ["solo","Tipo de Solo","text","Ex: Latossolo Vermelho-Amarelo"],
+                  ["fonte_agua","Fonte de Água","text","Ex: Ribeirão das Pedras + represa"],
+                  ["contato_preferencial","Contato Preferencial","text","WhatsApp ou telefone"],
+                  ["consultor_responsavel","Consultor Responsável","text",""],
+                ].map(([key,label,type,ph])=>(
+                  <div key={key} style={key==="acesso_propriedade"||key==="fonte_agua"?{gridColumn:"1/-1"}:{}}>
+                    <div style={{fontSize:10,color:"var(--dim)",marginBottom:4,fontWeight:600,letterSpacing:.5}}>{label.toUpperCase()}</div>
+                    <input type={type} value={memForm[key]||""} onChange={e=>setMemForm(f=>({...f,[key]:e.target.value}))}
+                      placeholder={ph} style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"6px 9px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                  </div>
+                ))}
+                <div style={{gridColumn:"1/-1"}}>
+                  <div style={{fontSize:10,color:"var(--dim)",marginBottom:4,fontWeight:600,letterSpacing:.5}}>INFRAESTRUTURA</div>
+                  <textarea value={memForm.infraestrutura||""} onChange={e=>setMemForm(f=>({...f,infraestrutura:e.target.value}))}
+                    placeholder="Casa sede, galpão de máquinas, tulha, terreiro, energia elétrica rural, irrigação..."
+                    rows={3} style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"6px 9px",fontSize:12,color:"var(--text)",boxSizing:"border-box",resize:"vertical"}}/>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <div style={{fontSize:10,color:"var(--dim)",marginBottom:4,fontWeight:600,letterSpacing:.5}}>OBSERVAÇÕES GERAIS</div>
+                  <textarea value={memForm.observacoes_gerais||""} onChange={e=>setMemForm(f=>({...f,observacoes_gerais:e.target.value}))}
+                    placeholder="Anotações livres sobre o produtor, família, histórico de relacionamento..."
+                    rows={3} style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"6px 9px",fontSize:12,color:"var(--text)",boxSizing:"border-box",resize:"vertical"}}/>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <button className="btn btn-green" onClick={salvarPropriedade} disabled={saving}>
+                    <Icon d={IC.check} size={11}/> {saving?"SALVANDO...":"SALVAR MEMÓRIA"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ABA: VISTORIAS */}
+            {aba==="vistorias" && memoria && (
+              <div>
+                <div style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:6,padding:14,marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--dim)",letterSpacing:1,marginBottom:10}}>REGISTRAR VISTORIA</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                    {[["data","Data","date"],["tecnico","Técnico Responsável","text"],["area_visitada_ha","Área Visitada (ha)","number"]].map(([k,l,t])=>(
+                      <div key={k}>
+                        <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>{l}</div>
+                        <input type={t} value={vForm[k]} onChange={e=>setVForm(f=>({...f,[k]:e.target.value}))}
+                          style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                      </div>
+                    ))}
+                    <div>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>TIPO</div>
+                      <select value={vForm.tipo} onChange={e=>setVForm(f=>({...f,tipo:e.target.value}))}
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)"}}>
+                        <option value="vistoria_inicial">Inicial</option>
+                        <option value="renovacao">Renovação</option>
+                        <option value="monitoramento">Monitoramento</option>
+                        <option value="emergencia">Emergência</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>CONFORMIDADE</div>
+                      <select value={vForm.conformidade} onChange={e=>setVForm(f=>({...f,conformidade:e.target.value}))}
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)"}}>
+                        <option value="regular">Regular</option>
+                        <option value="irregular">Irregular</option>
+                        <option value="pendente">Pendente</option>
+                        <option value="embargado">Embargado</option>
+                      </select>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,paddingTop:18}}>
+                      <input type="checkbox" checked={vForm.fotos_realizadas} onChange={e=>setVForm(f=>({...f,fotos_realizadas:e.target.checked}))} id="fotos"/>
+                      <label htmlFor="fotos" style={{fontSize:11,color:"var(--dim)"}}>Fotos realizadas</label>
+                    </div>
+                    <div style={{gridColumn:"1/-1"}}>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>OBSERVAÇÕES</div>
+                      <textarea value={vForm.observacoes} onChange={e=>setVForm(f=>({...f,observacoes:e.target.value}))}
+                        rows={2} style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box",resize:"vertical"}}/>
+                    </div>
+                  </div>
+                  <button className="btn btn-green" style={{marginTop:10}} onClick={addVistoria} disabled={saving||!vForm.tecnico}>
+                    <Icon d={IC.check} size={11}/> {saving?"SALVANDO...":"REGISTRAR VISTORIA"}
+                  </button>
+                </div>
+                {memoria.vistorias?.length === 0 && <div style={{color:"var(--dim)",fontSize:12}}>Nenhuma vistoria registrada.</div>}
+                {[...( memoria.vistorias||[])].reverse().map(v => (
+                  <div key={v.id} style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:6,padding:12,marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{v.data} · {v.tecnico}</div>
+                      <div style={{display:"flex",gap:6}}>
+                        <span style={{fontSize:10,padding:"2px 7px",borderRadius:3,background:"var(--bg3)",color:conformidadeCor[v.conformidade]||"var(--dim)",border:`1px solid ${conformidadeCor[v.conformidade]||"var(--bdr)"}`}}>{v.conformidade.toUpperCase()}</span>
+                        <span style={{fontSize:10,padding:"2px 7px",borderRadius:3,background:"var(--bg3)",color:"var(--dim)",border:"1px solid var(--bdr)"}}>{v.tipo.replace("_"," ")}</span>
+                      </div>
+                    </div>
+                    {v.area_visitada_ha && <div style={{fontSize:11,color:"var(--dim)",marginTop:4}}>Área visitada: {v.area_visitada_ha} ha {v.fotos_realizadas?"· 📷 Fotos":""}</div>}
+                    {v.observacoes && <div style={{fontSize:12,color:"var(--mid)",marginTop:6}}>{v.observacoes}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ABA: HISTÓRICO CRÉDITO */}
+            {aba==="credito" && memoria && (
+              <div>
+                <div style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:6,padding:14,marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--dim)",letterSpacing:1,marginBottom:10}}>REGISTRAR OPERAÇÃO ANTERIOR</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                    {[["banco","Banco/Cooperativa","text"],["linha","Linha","text"],["ano","Ano","number"],["valor","Valor (R$)","number"]].map(([k,l,t])=>(
+                      <div key={k}>
+                        <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>{l}</div>
+                        <input type={t} value={hcForm[k]} onChange={e=>setHcForm(f=>({...f,[k]:e.target.value}))}
+                          style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                      </div>
+                    ))}
+                    <div>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>STATUS</div>
+                      <select value={hcForm.status} onChange={e=>setHcForm(f=>({...f,status:e.target.value}))}
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)"}}>
+                        <option value="quitado">Quitado</option>
+                        <option value="em_andamento">Em Andamento</option>
+                        <option value="inadimplente">Inadimplente</option>
+                        <option value="renegociado">Renegociado</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>OBSERVAÇÕES</div>
+                      <input value={hcForm.observacoes} onChange={e=>setHcForm(f=>({...f,observacoes:e.target.value}))}
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                    </div>
+                  </div>
+                  <button className="btn btn-green" style={{marginTop:10}} onClick={addCredito} disabled={saving||!hcForm.valor}>
+                    <Icon d={IC.check} size={11}/> {saving?"SALVANDO...":"REGISTRAR"}
+                  </button>
+                </div>
+                {memoria.historico_credito?.length === 0 && <div style={{color:"var(--dim)",fontSize:12}}>Nenhum histórico de crédito registrado.</div>}
+                {[...(memoria.historico_credito||[])].reverse().map((hc,i) => (
+                  <div key={i} style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:6,padding:12,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{hc.banco} · {hc.linha} · {hc.ano}</div>
+                      <div style={{fontSize:12,color:"var(--dim)",marginTop:2}}>R$ {Number(hc.valor).toLocaleString("pt-BR")} {hc.observacoes?`· ${hc.observacoes}`:""}</div>
+                    </div>
+                    <span style={{fontSize:10,padding:"3px 9px",borderRadius:3,
+                      background: hc.status==="quitado"?"rgba(109,181,128,.15)":hc.status==="inadimplente"?"rgba(220,38,38,.15)":"rgba(234,179,8,.15)",
+                      color: hc.status==="quitado"?"var(--green)":hc.status==="inadimplente"?"var(--red)":"var(--gold)",
+                      border:`1px solid ${hc.status==="quitado"?"rgba(109,181,128,.3)":hc.status==="inadimplente"?"rgba(220,38,38,.3)":"rgba(234,179,8,.3)"}`}}>
+                      {hc.status.replace("_"," ").toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ABA: HISTÓRICO PRODUTIVO */}
+            {aba==="produtivo" && memoria && (
+              <div>
+                <div style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:6,padding:14,marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--dim)",letterSpacing:1,marginBottom:10}}>REGISTRAR SAFRA</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                    {[["safra","Safra (ex: 2023/2024)","text"],["cultura","Cultura","text"],["area_plantada_ha","Área Plantada (ha)","number"],["produtividade_sc_ha","Produtividade sc/ha","number"],["producao_total_sc","Produção Total (sc)","number"],["perdas_percent","Perdas (%)","number"]].map(([k,l,t])=>(
+                      <div key={k}>
+                        <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>{l}</div>
+                        <input type={t} value={hpForm[k]} onChange={e=>setHpForm(f=>({...f,[k]:e.target.value}))}
+                          style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                      </div>
+                    ))}
+                    <div style={{display:"flex",alignItems:"center",gap:6,paddingTop:18}}>
+                      <input type="checkbox" checked={hpForm.irrigacao} onChange={e=>setHpForm(f=>({...f,irrigacao:e.target.checked}))} id="irrig"/>
+                      <label htmlFor="irrig" style={{fontSize:11,color:"var(--dim)"}}>Irrigação</label>
+                    </div>
+                    <div style={{gridColumn:"1/-1"}}>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>OBSERVAÇÕES</div>
+                      <input value={hpForm.observacoes} onChange={e=>setHpForm(f=>({...f,observacoes:e.target.value}))}
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                    </div>
+                  </div>
+                  <button className="btn btn-green" style={{marginTop:10}} onClick={addProdutivo} disabled={saving||!hpForm.safra}>
+                    <Icon d={IC.check} size={11}/> {saving?"SALVANDO...":"REGISTRAR SAFRA"}
+                  </button>
+                </div>
+                {memoria.historico_produtivo?.length === 0 && <div style={{color:"var(--dim)",fontSize:12}}>Nenhum histórico produtivo registrado.</div>}
+                {[...(memoria.historico_produtivo||[])].reverse().map((hp,i) => (
+                  <div key={i} style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:6,padding:12,marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{hp.safra} · {hp.cultura}</div>
+                      {hp.irrigacao && <span style={{fontSize:10,color:"var(--green)"}}>💧 IRRIGADO</span>}
+                    </div>
+                    <div style={{display:"flex",gap:16,marginTop:4,fontSize:12,color:"var(--dim)"}}>
+                      <span>🌱 {hp.area_plantada_ha} ha</span>
+                      {hp.produtividade_sc_ha && <span>⚡ {hp.produtividade_sc_ha} sc/ha</span>}
+                      {hp.producao_total_sc && <span>📦 {hp.producao_total_sc} sc</span>}
+                      {hp.perdas_percent > 0 && <span style={{color:"var(--red)"}}>⚠ {hp.perdas_percent}% perdas</span>}
+                    </div>
+                    {hp.observacoes && <div style={{fontSize:11,color:"var(--mid)",marginTop:4}}>{hp.observacoes}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ABA: ALERTAS */}
+            {aba==="alertas" && memoria && (
+              <div>
+                <div style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:6,padding:14,marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--dim)",letterSpacing:1,marginBottom:10}}>CRIAR ALERTA</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                    <div>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>TIPO</div>
+                      <select value={alForm.tipo} onChange={e=>setAlForm(f=>({...f,tipo:e.target.value}))}
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)"}}>
+                        <option value="doc_vencendo">Documento Vencendo</option>
+                        <option value="embargo">Embargo Ambiental</option>
+                        <option value="irregularidade">Irregularidade Fundiária</option>
+                        <option value="pendencia">Pendência Geral</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>DATA LIMITE</div>
+                      <input type="date" value={alForm.data_limite} onChange={e=>setAlForm(f=>({...f,data_limite:e.target.value}))}
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                    </div>
+                    <div style={{gridColumn:"1/-1"}}>
+                      <div style={{fontSize:10,color:"var(--dim)",marginBottom:3}}>DESCRIÇÃO</div>
+                      <input value={alForm.descricao} onChange={e=>setAlForm(f=>({...f,descricao:e.target.value}))}
+                        placeholder="Ex: CAF vence em 30/06/2025, necessário renovação urgente"
+                        style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"5px 8px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                    </div>
+                  </div>
+                  <button className="btn btn-red" style={{marginTop:10}} onClick={addAlerta} disabled={saving||!alForm.descricao}>
+                    <Icon d={IC.bell} size={11}/> {saving?"SALVANDO...":"CRIAR ALERTA"}
+                  </button>
+                </div>
+                {memoria.alertas?.filter(a=>!a.resolvido).length === 0 && <div style={{color:"var(--green)",fontSize:12}}>✓ Nenhum alerta ativo.</div>}
+                {(memoria.alertas||[]).filter(a=>!a.resolvido).map(a => (
+                  <div key={a.id} style={{background:"rgba(220,38,38,.06)",border:"1px solid rgba(220,38,38,.2)",borderRadius:6,padding:12,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <span style={{fontSize:10,padding:"2px 7px",borderRadius:3,background:"rgba(220,38,38,.15)",color:tipoCor[a.tipo]||"var(--red)",border:"1px solid rgba(220,38,38,.3)"}}>{a.tipo.replace(/_/g," ").toUpperCase()}</span>
+                        {a.data_limite && <span style={{fontSize:10,color:"var(--gold)"}}>Limite: {a.data_limite}</span>}
+                      </div>
+                      <div style={{fontSize:12,color:"var(--mid)",marginTop:6}}>{a.descricao}</div>
+                    </div>
+                    <button className="btn btn-ghost" style={{padding:"3px 10px",fontSize:9}} onClick={()=>resolverAlerta(a.id)}>
+                      ✓ RESOLVER
+                    </button>
+                  </div>
+                ))}
+                {(memoria.alertas||[]).filter(a=>a.resolvido).length > 0 && (
+                  <div style={{marginTop:16}}>
+                    <div style={{fontSize:10,color:"var(--dim)",letterSpacing:1,marginBottom:8}}>RESOLVIDOS</div>
+                    {(memoria.alertas||[]).filter(a=>a.resolvido).map(a => (
+                      <div key={a.id} style={{background:"var(--bg2)",border:"1px solid var(--bdr2)",borderRadius:6,padding:10,marginBottom:6,opacity:.6}}>
+                        <div style={{fontSize:11,color:"var(--dim)"}}>✓ {a.tipo.replace(/_/g," ")} · {a.descricao}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:8,color:"var(--dim)"}}>
+          <Icon d={IC.prop} size={32}/>
+          <div style={{fontSize:13}}>Selecione um produtor para ver e editar a memória da propriedade</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GerenciarUsuarios({ setScreen }) {
   const { user: currentUser } = useAuth();
   const [usuarios, setUsuarios] = useState([]);
@@ -1227,10 +1687,12 @@ function MayaApp() {
   const { user, logout, isAdmin } = useAuth();
   const [screen, setScreen]       = useState("dashboard");
   const [selectedOp, setSelectedOp] = useState(null);
+  const [selectedProd, setSelectedProd] = useState(null);
 
   const navItems = [
     { key:"dashboard",   label:"Dashboard",      icon:IC.home,  badge:null },
     { key:"cadastro",    label:"Novo Produtor",  icon:IC.users, badge:null },
+    { key:"produtores",   label:"Produtores",     icon:IC.prop,  badge:null },
     { key:"operacoes",   label:"Operações",      icon:IC.ops,   badge:null },
     { key:"checklist",   label:"Documentos",     icon:IC.docs,  badge:null },
     { key:"dossie",      label:"Dossiê",         icon:IC.dossie,badge:null },
@@ -1248,6 +1710,7 @@ function MayaApp() {
     dashboard:"Dashboard",
     cadastro:"Novo Produtor",
     operacoes:"Operações",
+    produtores:"Produtores",
     checklist:"Documentos",
     dossie:"Dossiê",
     usuarios:"Gerenciar Usuários"
@@ -1305,8 +1768,9 @@ function MayaApp() {
           </header>
 
           {screen==="dashboard" && <Dashboard setScreen={setScreen} setSelectedOp={setSelectedOp}/>}
-          {screen==="cadastro"  && <CadastroProd setScreen={setScreen}/>}
+          {screen==="cadastro"  && <CadastroProd setScreen={setScreen} prodId={selectedProd}/>}
           {screen==="operacoes" && <Operacoes setScreen={setScreen} setSelectedOp={setSelectedOp}/>}
+          {screen==="produtores" && <ListaProdutores setScreen={setScreen} setSelectedProd={setSelectedProd}/>}
           {screen==="checklist" && selectedOp && <Checklist setScreen={setScreen} selectedOp={selectedOp}/>}
           {screen==="dossie"    && selectedOp && <Dossie setScreen={setScreen} selectedOp={selectedOp}/>}
           {screen==="usuarios"  && isAdmin() && <GerenciarUsuarios setScreen={setScreen}/>}
