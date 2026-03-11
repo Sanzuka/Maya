@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { AuthProvider, useAuth } from "./AuthContext";
-import Login from "./Login";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -1326,19 +1325,5 @@ export default function App() {
 }
 
 function AppWithAuth() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"var(--bg)",color:"var(--mid)"}}>
-        Carregando...
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Login />;
-  }
-
   return <MayaApp />;
 }
