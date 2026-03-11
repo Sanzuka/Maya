@@ -348,7 +348,7 @@ async def criar_usuario(
     
     # Registrar auditoria
     await registrar_auditoria(
-        "CRIAR_USUARIO",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_USUARIO",
         f"Criou usuÃ¡rio {usuario.nome} ({usuario.email}) com role {usuario.role}",
         request
     )
@@ -435,7 +435,7 @@ async def criar_produtor(
     
     # Registrar auditoria
     await registrar_auditoria(
-        "CRIAR_PRODUTOR",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_PRODUTOR",
         f"Criou produtor {produtor.nome} (CPF: {produtor.cpf})",
         request
     )
@@ -507,7 +507,7 @@ async def criar_operacao(
     
     # Registrar auditoria
     await registrar_auditoria(
-        "CRIAR_OPERACAO",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_OPERACAO",
         f"Criou operaÃ§Ã£o {operacao.id} para produtor {produtor['nome']}",
         request
     )
@@ -593,7 +593,7 @@ async def atualizar_operacao(
         raise HTTPException(status_code=404, detail="OperaÃ§Ã£o nÃ£o encontrada")
     
     await registrar_auditoria(
-        "ATUALIZAR_OPERACAO",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_OPERACAO",
         f"Alterou status da operaÃ§Ã£o {id} para {status.value}",
         request
     )
@@ -642,7 +642,7 @@ async def atualizar_documentos(
         )
     
     await registrar_auditoria(
-        "ATUALIZAR_DOCUMENTOS",
+        {"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_DOCUMENTOS",
         f"Atualizou documentos da operaÃ§Ã£o {id}",
         request
     )
