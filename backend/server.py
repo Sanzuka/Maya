@@ -266,6 +266,31 @@ class MemoriaProdutorUpdate(BaseModel):
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # MODELS - OPERAÃÃO
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODELS - GLEBA (MCR 2-1-2 / SICOR Campo 25 / SIRGAS2000)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class VerticeGleba(BaseModel):
+    """Ponto do perimetro da gleba — SIRGAS2000, 6 casas decimais (MCR 2-1-2)"""
+    seq: int                    # ordem sequencial ao longo do perimetro
+    lat: float                  # latitude  -90 a +90
+    lon: float                  # longitude -180 a +180
+    alt: Optional[float] = None # altitude em metros (opcional no SICOR)
+
+class GlebaInfo(BaseModel):
+    """
+    Identificacao da gleba conforme MCR 2-1-2 e SICOR Campo 22/23/25.
+    Sistema de referencia: SIRGAS2000 (obrigatorio BACEN/INCRA).
+    """
+    identificacao: int = 1                    # Campo 23 SICOR — numero seq da gleba
+    codigo_car: Optional[str] = ""            # CAR do imovel — cruzamento MCR 2-9
+    vertices: List[VerticeGleba] = []         # perimetro (min 3 pontos)
+    area_calculada_ha: Optional[float] = None # calculada pelo MAYA via Shoelace
+    area_contratada_ha: Optional[float] = None# area declarada no contrato
+    municipio_ibge: Optional[str] = ""        # codigo CADMU/BCB (Campo 24 SICOR)
+    descricao: Optional[str] = ""             # talhao, cultura, obs livre
+
 class OperacaoCreate(BaseModel):
     prod_id: str
     linha: LinhaCredito
@@ -273,6 +298,7 @@ class OperacaoCreate(BaseModel):
     valor: float
     cultura: str
     banco: str
+    gleba: Optional[GlebaInfo] = None
 
 class Operacao(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -285,6 +311,7 @@ class Operacao(BaseModel):
     cultura: str
     banco: str
     status: StatusOperacao = StatusOperacao.PENDENTE
+    gleba: Optional[GlebaInfo] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: Optional[str] = None
     approved_by: Optional[str] = None
@@ -597,6 +624,27 @@ async def criar_operacao(
         raise HTTPException(status_code=404, detail="Produtor nÃ£o encontrado")
     
     operacao_dict = input.model_dump()
+
+    # Calcular area da gleba pelos vertices (MCR 2-1-2 / SICOR Campo 44)
+    alerta_gleba = None
+    if input.gleba and input.gleba.vertices:
+        area_calc = calcular_area_poligono_ha(input.gleba.vertices)
+        operacao_dict["gleba"]["area_calculada_ha"] = area_calc
+        # Verificar tolerancia de area MCR (10%)
+        tolerancia = verificar_tolerancia_area(area_calc, input.gleba.area_contratada_ha)
+        if not tolerancia["conforme"]:
+            alerta_gleba = {"tipo": "tolerancia_area", **tolerancia}
+
+    # Verificar sobreposicao de glebas (MCR 3-6-3-b)
+    if input.gleba:
+        resultado_sob = await verificar_sobreposicao_gleba(
+            input.prod_id,
+            input.gleba.codigo_car or "",
+            input.gleba.area_contratada_ha or 0
+        )
+        if resultado_sob["status"] == "conflito":
+            alerta_gleba = resultado_sob
+
     operacao = Operacao(**operacao_dict, created_by="admin-local")
     
     # Salvar operaÃ§Ã£o
@@ -630,7 +678,10 @@ async def criar_operacao(
         request
     )
     
-    return operacao
+    result = operacao.model_dump()
+    if alerta_gleba:
+        result["alerta_gleba"] = alerta_gleba
+    return result
 
 @api_router.get("/operacoes", response_model=List[OperacaoComProdutor])
 async def listar_operacoes(
@@ -881,6 +932,97 @@ async def resolver_alerta(prod_id: str, alerta_id: str):
     )
     return {"success": True}
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTES - GLEBAS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_router.get("/produtores/{prod_id}/glebas")
+async def listar_glebas_produtor(prod_id: str):
+    """
+    Lista todas as glebas em uso ativo pelo produtor.
+    Inclui controle de area comprometida vs disponivel.
+    Conformidade: MCR 3-6-3-b (duplicidade) e MCR 2-1 (limite produtivo).
+    """
+    ops = await db.operacoes.find(
+        {"prod_id": prod_id, "gleba": {"$ne": None}},
+        {"_id": 0}
+    ).to_list(200)
+
+    glebas_por_car = {}
+    area_comprometida_ativa = 0.0
+
+    for op in ops:
+        gleba = op.get("gleba") or {}
+        car = gleba.get("codigo_car", "") or "sem_car"
+        ativo = op.get("status") in ["pendente", "em_analise", "aprovado"]
+
+        if car not in glebas_por_car:
+            glebas_por_car[car] = {
+                "codigo_car": car if car != "sem_car" else None,
+                "descricao": gleba.get("descricao", ""),
+                "area_calculada_ha": gleba.get("area_calculada_ha"),
+                "operacoes": []
+            }
+
+        glebas_por_car[car]["operacoes"].append({
+            "operacao_id": op["id"],
+            "linha": op.get("linha"),
+            "banco": op.get("banco"),
+            "valor": op.get("valor"),
+            "area_contratada_ha": gleba.get("area_contratada_ha"),
+            "status": op.get("status"),
+            "cultura": op.get("cultura"),
+            "ativa": ativo
+        })
+
+        if ativo and gleba.get("area_contratada_ha"):
+            area_comprometida_ativa += gleba["area_contratada_ha"]
+
+    memoria = await db.memoria_produtores.find_one({"prod_id": prod_id}, {"_id": 0})
+    area_agricola = None
+    if memoria:
+        area_agricola = memoria.get("area_agricola_ha") or memoria.get("area_total_ha")
+
+    return {
+        "prod_id": prod_id,
+        "glebas": list(glebas_por_car.values()),
+        "area_agricola_imovel_ha": area_agricola,
+        "area_comprometida_ativa_ha": round(area_comprometida_ativa, 4),
+        "area_disponivel_ha": round(area_agricola - area_comprometida_ativa, 4) if area_agricola else None,
+        "alerta_excede": area_agricola is not None and area_comprometida_ativa > area_agricola,
+        "referencia_normativa": "MCR 2-1-2 (CG obrigatorias) / MCR 3-6-3-b (duplicidade) / SICOR Campo 25"
+    }
+
+@api_router.post("/verificar-gleba")
+async def verificar_gleba_pre_contratacao(
+    prod_id: str,
+    codigo_car: str = "",
+    area_contratada_ha: float = 0,
+    vertices: Optional[List[VerticeGleba]] = None,
+    operacao_id: Optional[str] = None
+):
+    """
+    Verificacao pre-contratacao conforme MCR 3-6-3-b.
+    Uso: consultor executa antes de ir ao banco para identificar impedimentos.
+    Retorna: status livre/conflito + analise de tolerancia de area SICOR.
+    """
+    resultado = await verificar_sobreposicao_gleba(
+        prod_id, codigo_car, area_contratada_ha, operacao_id
+    )
+
+    # Calcular area pelos vertices se fornecidos
+    if vertices and len(vertices) >= 3:
+        area_calc = calcular_area_poligono_ha(vertices)
+        resultado["area_calculada_ha"] = area_calc
+        resultado["tolerancia_area"] = verificar_tolerancia_area(area_calc, area_contratada_ha)
+
+    resultado["orientacao"] = (
+        "Gleba disponivel para contratacao." if resultado["status"] == "livre"
+        else "ATENCAO: Existem impedimentos. Verifique os conflitos antes de protocolar no banco."
+    )
+    return resultado
+
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
 async def obter_estatisticas():
     """Obter estatÃ­sticas para o dashboard"""
@@ -975,9 +1117,7 @@ async def startup_event():
         )
         doc = serialize_datetime(admin.model_dump())
         await db.usuarios.insert_one(doc)
-        logger.info("â UsuÃ¡rio admin criado: admin@maya.com / admin123")
-    else:
-        logger.info("â¹ï¸  UsuÃ¡rio admin jÃ¡ existe")
+        logger.info("Usuario admin ja existe")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
