@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { AuthProvider, useAuth } from "./AuthContext";
+import Dashboard from "./components/dashboard";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -236,148 +237,8 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SCREEN: DASHBOARD
+// SCREEN: DASHBOARD — imported from ./components/dashboard
 // ─────────────────────────────────────────────────────────────────────────────
-function Dashboard({ setScreen, setSelectedOp }) {
-  const [activeKpi, setActiveKpi] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [operacoes, setOperacoes] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    carregarDados();
-  }, []);
-
-  const carregarDados = async () => {
-    try {
-      const [statsRes, opsRes] = await Promise.all([
-        axios.get(`${API}/dashboard/stats`),
-        axios.get(`${API}/operacoes?limit=10`)
-      ]);
-      setStats(statsRes.data);
-      setOperacoes(opsRes.data.slice(0, 4));
-      setLoading(false);
-    } catch (error) {
-      console.error("Erro ao carregar dashboard:", error);
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <div className="scroll"><div className="loading">Carregando...</div></div>;
-  if (!stats) return <div className="scroll"><div className="error">Erro ao carregar dados</div></div>;
-
-  const formatCurrency = (val) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL",maximumFractionDigits:0}).format(val);
-
-  return (
-    <div className="scroll">
-      <div className="krow">
-        {[
-          { k:"hoje",     label:"Dossiês Hoje",    val:stats.dossies_hoje.toString(),     cls:"",  sub:"+3 vs ontem" },
-          { k:"mes",      label:"Este Mês",         val:stats.dossies_mes.toString(),      cls:"g", sub:`meta: 60 dossiês` },
-          { k:"credito",  label:"Crédito (mês)",    val:formatCurrency(stats.credito_mes), cls:"b", sub:"encaminhado ao banco" },
-          { k:"pend",     label:"Docs Pendentes",   val:stats.docs_pendentes.toString(),   cls:"r", sub:`de ${stats.total_produtores} produtores` },
-        ].map(k => (
-          <div key={k.k} className={`kc ${activeKpi===k.k?"on":""}`} onClick={()=>setActiveKpi(activeKpi===k.k?null:k.k)}>
-            <div className="kl">{k.label}</div>
-            <div className={`kv ${k.cls}`}>{k.val}</div>
-            <div className="ks">{k.sub}</div>
-          </div>
-        ))}
-      </div>
-      <div className="g2">
-        <div>
-          <div className="sl">Operações Recentes</div>
-          <div className="panel">
-            <div className="ph">
-              <span className="pt">[ Operações Ativas ]</span>
-              <div style={{display:"flex",gap:9}}>
-                <button className="btn btn-gold" onClick={()=>setScreen("operacoes")}>
-                  <Icon d={IC.plus} size={11}/> NOVA
-                </button>
-                <button className="pa" onClick={()=>setScreen("operacoes")}>
-                  VER TODAS <Icon d={IC.arrow} size={10}/>
-                </button>
-              </div>
-            </div>
-            <table className="tbl">
-              <thead><tr>
-                <th>Produtor</th><th>Linha</th><th>Valor</th><th>Docs</th><th>Status</th>
-              </tr></thead>
-              <tbody>
-                {operacoes.map(op => {
-                  const p = op.produtor;
-                  const prog = op.progresso_docs || {ok:0, total:9, percentual:0};
-                  const pct = prog.percentual;
-                  const pc = pct===100?"var(--green)":pct>=60?"var(--gold)":"var(--red)";
-                  const st = STATUS_CFG[op.status] || STATUS_CFG.pendente;
-                  return (
-                    <tr key={op.id} className="click" onClick={()=>{setSelectedOp(op.id);setScreen("dossie");}}>
-                      <td>
-                        <div className="prod-name">{p?.nome || "N/A"}</div>
-                        <div className="prod-sub">{p?.municipio} · {op.id}</div>
-                      </td>
-                      <td>
-                        <span className={`lb ${op.linha.toLowerCase()}`}>{op.linha}</span>
-                        <div className="prod-sub" style={{marginTop:3}}>{op.modalidade}</div>
-                      </td>
-                      <td style={{color:"var(--text)",fontSize:11}}>
-                        {formatCurrency(op.valor)}
-                      </td>
-                      <td>
-                        <div className="pbar">
-                          <div className="pbg"><div className="pbf" style={{width:`${pct}%`,background:pc}}/></div>
-                          <span className="pct">{prog.ok}/{prog.total}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="sb2" style={{color:st.color,background:st.bg,border:`1px solid ${st.border}`}}>
-                          {st.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div className="side">
-          <div className="sl">Alertas</div>
-          <div className="panel">
-            <div className="ph"><span className="pt">[ Atenção ]</span><span style={{fontSize:9,color:"var(--red)"}}>2 urgentes</span></div>
-            {[
-              {t:"w",m:"Documentos pendentes em 3 operações"},
-              {t:"w",m:"ZARC não consultado em algumas operações"},
-              {t:"ok",m:`${stats.dossies_mes} dossiês criados este mês`},
-              {t:"ok",m:`Taxa de aprovação: ${stats.taxa_aprovacao}%`},
-            ].map((a,i)=>(
-              <div key={i} className="arow">
-                <div className={`adot ${a.t}`}/>
-                {a.m}
-              </div>
-            ))}
-          </div>
-          <div className="sl">Escritório</div>
-          <div className="panel">
-            <div className="ph"><span className="pt">[ Estatísticas ]</span></div>
-            {[
-              ["Produtores",stats.total_produtores.toString(),""],
-              ["Taxa aprovação",`${stats.taxa_aprovacao}%`,"g"],
-              ["Tempo médio","28 min",""],
-              ["Banco principal","Sicoob","gold"],
-              ["Próx. vencimento","3 dias",""],
-            ].map(([l,v,c])=>(
-              <div key={l} className="strow">
-                <span className="stl">{l}</span>
-                <span className={`stv ${c}`}>{v}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCREEN: CADASTRO DE PRODUTOR
