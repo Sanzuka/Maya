@@ -1082,6 +1082,17 @@ async def obter_estatisticas():
 # ROUTES - ELEGIBILIDADE MCR (Sprint 1 — T1)
 # ─────────────────────────────────────────────────────────────────────────────
 
+class ElegibilidadeRequest(BaseModel):
+    produtor_id: str
+    linha: str              # PRONAF | PRONAMP | Livre
+    modalidade: str
+    valor_solicitado: float
+    finalidade_especifica: Optional[str] = None
+
+class ValidateDocumentoRequest(BaseModel):
+    tipo: str               # CPF | CCIR | CAR | CAF
+    valor: str
+
 @api_router.post("/check-elegibilidade")
 async def check_elegibilidade_endpoint(req: ElegibilidadeRequest):
     """
