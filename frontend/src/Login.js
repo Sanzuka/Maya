@@ -20,11 +20,20 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
-  --bg:#0B0D09;--bg2:#111410;--bg3:#181C14;--bg4:#1E2318;
-  --gold:#C8A84B;--gold2:#A08030;--gold3:rgba(200,168,75,0.12);
-  --green:#6DB580;--red:#C05A4A;
-  --text:#D4CCBA;--mid:#9A9E8A;--dim:#5A6050;
-  --bdr:rgba(200,168,75,0.1);--bdr2:rgba(200,168,75,0.06);
+  --bg:#F5F5F5;
+  --bg2:#FFFFFF;
+  --bg3:#FAFAFA;
+  --bg4:#E0E0E0;
+  --gold:#A8852B;
+  --gold2:#8A6710;
+  --gold3:rgba(168,133,43,0.08);
+  --green:#2D6A4F;
+  --red:#E53935;
+  --text:#111111;
+  --mid:#555555;
+  --dim:#888888;
+  --bdr:#E0E0E0;
+  --bdr2:#EEEEEE;
 }
 body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:13px;margin:0;padding:0;}
 
@@ -44,7 +53,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
   left:-50%;
   width:200%;
   height:200%;
-  background:radial-gradient(circle, rgba(200,168,75,0.03) 0%, transparent 70%);
+  background:radial-gradient(circle, rgba(168,133,43,0.05) 0%, transparent 70%);
   animation:pulse 8s ease-in-out infinite;
 }
 @keyframes pulse{
@@ -59,7 +68,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
   padding:40px;
   width:420px;
   position:relative;
-  box-shadow:0 8px 32px rgba(0,0,0,0.4);
+  box-shadow:0 8px 32px rgba(0,0,0,0.06);
 }
 .login-box::before{
   content:'';
@@ -124,8 +133,8 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
   transition:all .2s;
 }
 .form-input:focus{
-  border-color:rgba(200,168,75,.4);
-  background:var(--bg4);
+  border-color:rgba(168,133,43,.4);
+  background:var(--bg2);
 }
 .form-input::placeholder{
   color:var(--dim);
@@ -134,7 +143,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .btn-login{
   width:100%;
   background:linear-gradient(135deg, var(--gold) 0%, var(--gold2) 100%);
-  color:var(--bg);
+  color:#FFFFFF;
   border:none;
   border-radius:4px;
   padding:14px;
@@ -149,7 +158,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 }
 .btn-login:hover{
   transform:translateY(-2px);
-  box-shadow:0 4px 12px rgba(200,168,75,0.4);
+  box-shadow:0 4px 12px rgba(168,133,43,0.3);
 }
 .btn-login:active{
   transform:translateY(0);
@@ -161,8 +170,8 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 }
 
 .error-box{
-  background:rgba(192,90,74,0.1);
-  border:1px solid rgba(192,90,74,0.3);
+  background:rgba(229,57,53,0.06);
+  border:1px solid rgba(229,57,53,0.25);
   border-radius:4px;
   padding:12px 14px;
   margin-bottom:20px;

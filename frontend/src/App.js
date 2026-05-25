@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "./AuthContext";
 import Dashboard from "./components/dashboard";
+import VerifyPage from "./VerifyPage";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -60,10 +62,10 @@ const DOCS_TEMPLATE = [
 ];
 
 const STATUS_CFG = {
-  pronto:      { label: "Pronto",      color: "#6DB580", bg: "rgba(109,181,128,0.12)", border: "rgba(109,181,128,0.3)" },
-  em_analise:  { label: "Em Análise",  color: "#C8A84B", bg: "rgba(200,168,75,0.12)",  border: "rgba(200,168,75,0.3)"  },
-  pendente:    { label: "Pendente",    color: "#C05A4A", bg: "rgba(192,90,74,0.12)",   border: "rgba(192,90,74,0.3)"   },
-  encaminhado: { label: "Encaminhado", color: "#7A9EC0", bg: "rgba(122,158,192,0.12)", border: "rgba(122,158,192,0.3)" },
+  pronto:      { label: "Pronto",      color: "#2D6A4F", bg: "#E8F5E9", border: "rgba(45,106,79,0.3)" },
+  em_analise:  { label: "Em Análise",  color: "#A8852B", bg: "#FFF3E0", border: "rgba(168,133,43,0.3)" },
+  pendente:    { label: "Pendente",    color: "#E53935", bg: "#FFEBEE", border: "rgba(229,57,53,0.3)" },
+  encaminhado: { label: "Encaminhado", color: "#1976D2", bg: "#E3F2FD", border: "rgba(25,118,210,0.3)" },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,12 +75,23 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;1,400&family=Barlow+Condensed:wght@600;700;800&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
-  --bg:#0B0D09;--bg2:#111410;--bg3:#181C14;--bg4:#1E2318;--bg5:#242A1E;
-  --gold:#C8A84B;--gold2:#A08030;--gold3:rgba(200,168,75,0.12);
-  --green:#6DB580;--green2:#4A7C59;
-  --red:#C05A4A;--blue:#7A9EC0;
-  --text:#D4CCBA;--mid:#9A9E8A;--dim:#5A6050;
-  --bdr:rgba(200,168,75,0.1);--bdr2:rgba(200,168,75,0.06);
+  --bg:#F5F5F5;
+  --bg2:#FFFFFF;
+  --bg3:#FAFAFA;
+  --bg4:#E0E0E0;
+  --bg5:#D6D6D6;
+  --gold:#A8852B;
+  --gold2:#8A6710;
+  --gold3:rgba(168,133,43,0.08);
+  --green:#2D6A4F;
+  --green2:#1B4332;
+  --red:#E53935;
+  --blue:#1976D2;
+  --text:#111111;
+  --mid:#555555;
+  --dim:#888888;
+  --bdr:#E0E0E0;
+  --bdr2:#EEEEEE;
 }
 body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:16px;}
 .app{display:flex;height:100vh;overflow:hidden;}
@@ -91,8 +104,8 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .logo-sub{font-size:8px;color:var(--dim);letter-spacing:1.5px;margin-top:3px;}
 .sb-nav{flex:1;padding:10px 0;}
 .ni{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;font-size:14px;color:var(--mid);letter-spacing:.3px;transition:all .15s;border:none;background:none;width:100%;text-align:left;position:relative;}
-.ni:hover{color:var(--text);background:rgba(200,168,75,0.04);}
-.ni.on{color:var(--gold);background:rgba(200,168,75,0.07);}
+.ni:hover{color:var(--text);background:rgba(168,133,43,0.04);}
+.ni.on{color:var(--gold);background:rgba(168,133,43,0.07);}
 .ni.on::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--gold);}
 .nb{margin-left:auto;background:var(--red);color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:9px;}
 .sb-foot{padding:11px 14px;border-top:1px solid var(--bdr2);font-size:8.5px;color:var(--dim);}
@@ -135,7 +148,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .kc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--gold);opacity:0;transition:opacity .2s;}
 .kc:hover{border-color:var(--bdr);background:var(--bg3);}
 .kc:hover::before,.kc.on::before{opacity:1;}
-.kc.on{border-color:rgba(200,168,75,.3);background:var(--gold3);}
+.kc.on{border-color:rgba(168,133,43,.3);background:var(--gold3);}
 .kl{font-size:12px;color:var(--text);letter-spacing:1px;text-transform:uppercase;margin-bottom:7px;}
 .kv{font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:800;color:var(--gold);line-height:1;margin-bottom:3px;}
 .kv.g{color:var(--green);} .kv.b{color:var(--blue);} .kv.r{color:var(--red);}
@@ -147,12 +160,12 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .tbl td{padding:10px 14px;border-bottom:1px solid var(--bdr2);transition:background .1s;}
 .tbl tr:last-child td{border-bottom:none;}
 .tbl tr.click{cursor:pointer;}
-.tbl tr.click:hover td{background:rgba(200,168,75,.04);}
+.tbl tr.click:hover td{background:rgba(168,133,43,.04);}
 .prod-name{color:var(--text);font-weight:500;font-size:11.5px;}
 .prod-sub{font-size:12px;color:var(--mid);margin-top:2px;}
 .lb{font-size:8.5px;font-weight:600;letter-spacing:.8px;padding:2px 7px;border-radius:3px;display:inline-block;}
 .lb.pronaf{color:var(--green);background:rgba(109,181,128,.12);border:1px solid rgba(109,181,128,.25);}
-.lb.pronamp{color:var(--gold);background:rgba(200,168,75,.1);border:1px solid rgba(200,168,75,.2);}
+.lb.pronamp{color:var(--gold);background:rgba(168,133,43,.1);border:1px solid rgba(168,133,43,.2);}
 .lb.livre{color:var(--blue);background:rgba(122,158,192,.1);border:1px solid rgba(122,158,192,.2);}
 .sb2{font-size:9px;letter-spacing:.4px;padding:3px 8px;border-radius:3px;display:inline-block;font-weight:500;}
 .pbar{display:flex;align-items:center;gap:7px;}
@@ -176,8 +189,8 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 
 /* BUTTONS */
 .btn{display:inline-flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.5px;padding:8px 14px;border-radius:4px;cursor:pointer;transition:all .15s;border:none;}
-.btn-gold{background:rgba(200,168,75,.1);border:1px solid rgba(200,168,75,.3) !important;color:var(--gold);}
-.btn-gold:hover{background:rgba(200,168,75,.18);border-color:rgba(200,168,75,.5) !important;}
+.btn-gold{background:rgba(168,133,43,.1);border:1px solid rgba(168,133,43,.3) !important;color:var(--gold);}
+.btn-gold:hover{background:rgba(168,133,43,.18);border-color:rgba(168,133,43,.5) !important;}
 .btn-green{background:rgba(109,181,128,.1);border:1px solid rgba(109,181,128,.3) !important;color:var(--green);}
 .btn-green:hover{background:rgba(109,181,128,.2);}
 .btn-red{background:rgba(192,90,74,.1);border:1px solid rgba(192,90,74,.3) !important;color:var(--red);}
@@ -195,8 +208,8 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .form-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
 .fg{display:flex;flex-direction:column;gap:5px;}
 .fg label{font-size:12px;color:var(--text);letter-spacing:0.5px;text-transform:uppercase;}
-.fg input,.fg select{background:var(--bg3);border:1px solid rgba(200,168,75,0.2);border-radius:4px;padding:10px 12px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:15px;outline:none;transition:border-color .15s;}
-.fg input:focus,.fg select:focus{border-color:rgba(200,168,75,.4);}
+.fg input,.fg select{background:var(--bg3);border:1px solid rgba(168,133,43,0.2);border-radius:4px;padding:10px 12px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:15px;outline:none;transition:border-color .15s;}
+.fg input:focus,.fg select:focus{border-color:rgba(168,133,43,.4);}
 .fg input::placeholder{color:var(--dim);}
 .fg select option{background:var(--bg3);}
 .form-section{background:var(--bg3);border:1px solid var(--bdr2);border-radius:6px;padding:16px;}
@@ -207,7 +220,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 /* CHECKLIST */
 .doc-item{display:flex;align-items:center;gap:11px;padding:10px 14px;border-bottom:1px solid var(--bdr2);transition:background .15s;cursor:pointer;}
 .doc-item:last-child{border-bottom:none;}
-.doc-item:hover{background:rgba(200,168,75,.03);}
+.doc-item:hover{background:rgba(168,133,43,.03);}
 .doc-check{width:20px;height:20px;border-radius:3px;border:1.5px solid;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;}
 .doc-info{flex:1;}
 .doc-name{font-size:11px;color:var(--text);}
@@ -252,7 +265,7 @@ function CadastroProd({ setScreen }) {
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const renda = parseFloat(form.renda) || 0;
   const enquad = renda <= 360000 ? { label:"PRONAF", color:"var(--green)", bg:"rgba(109,181,128,.12)", border:"rgba(109,181,128,.3)", desc:"Renda ≤ R$360k · Limite R$250k/ano · Taxa 3–6% a.a. · CAF obrigatório" }
-    : renda <= 1760000 ? { label:"PRONAMP", color:"var(--gold)", bg:"rgba(200,168,75,.12)", border:"rgba(200,168,75,.3)", desc:"Renda R$360k–R$1,76M · Limite R$1,5M/ano · Taxa 8% a.a." }
+    : renda <= 1760000 ? { label:"PRONAMP", color:"var(--gold)", bg:"rgba(168,133,43,.12)", border:"rgba(168,133,43,.3)", desc:"Renda R$360k–R$1,76M · Limite R$1,5M/ano · Taxa 8% a.a." }
     : { label:"Livre", color:"var(--blue)", bg:"rgba(122,158,192,.12)", border:"rgba(122,158,192,.3)", desc:"Renda > R$1,76M · Sem limite · Crédito livre" };
 
   const salvar = async () => {
@@ -548,7 +561,7 @@ function Operacoes({ setScreen, setSelectedOp }) {
             </div>
           </div>
           {prod && (
-            <div style={{background:"rgba(200,168,75,.06)",border:"1px solid var(--bdr2)",borderRadius:4,padding:"8px 12px",marginBottom:12,fontSize:9.5,color:"var(--mid)"}}>
+            <div style={{background:"rgba(168,133,43,.06)",border:"1px solid var(--bdr2)",borderRadius:4,padding:"8px 12px",marginBottom:12,fontSize:9.5,color:"var(--mid)"}}>
               <b style={{color:enquad.color}}>{enquad.label}</b> · {prod.nome} · Renda: {formatCurrency(renda)} · {enquad.desc}
             </div>
           )}
@@ -1568,10 +1581,10 @@ function GerenciarUsuarios({ setScreen }) {
   };
 
   const roleColors = {
-    admin: {color:"var(--gold)", bg:"rgba(200,168,75,0.12)", border:"rgba(200,168,75,0.3)"},
-    gerente: {color:"var(--blue)", bg:"rgba(122,158,192,0.12)", border:"rgba(122,158,192,0.3)"},
-    operador: {color:"var(--green)", bg:"rgba(109,181,128,0.12)", border:"rgba(109,181,128,0.3)"},
-    visualizador: {color:"var(--mid)", bg:"rgba(154,158,138,0.12)", border:"rgba(154,158,138,0.3)"}
+    admin: {color:"var(--gold)", bg:"rgba(168,133,43,0.12)", border:"rgba(168,133,43,0.3)"},
+    gerente: {color:"var(--blue)", bg:"rgba(25,118,210,0.12)", border:"rgba(25,118,210,0.3)"},
+    operador: {color:"var(--green)", bg:"rgba(45,106,79,0.12)", border:"rgba(45,106,79,0.3)"},
+    visualizador: {color:"var(--mid)", bg:"rgba(85,85,85,0.12)", border:"rgba(85,85,85,0.3)"}
   };
 
   const roleLabels = {
@@ -1804,11 +1817,25 @@ function MayaApp() {
   );
 }
 
+function VerifyRoute() {
+  const { reportId } = useParams();
+  return <VerifyPage reportId={reportId} />;
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <AppWithAuth />
-    </AuthProvider>
+    <BrowserRouter>
+      <Routes>
+        {/* Página pública de verificação EUDR — acessada via QR code */}
+        <Route path="/verify/:reportId" element={<VerifyRoute />} />
+        {/* App autenticado */}
+        <Route path="/*" element={
+          <AuthProvider>
+            <AppWithAuth />
+          </AuthProvider>
+        } />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

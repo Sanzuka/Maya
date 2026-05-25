@@ -322,7 +322,7 @@ class OperacaoComProdutor(Operacao):
     documentos: Optional[Dict[str, str]] = None
     progresso_docs: Optional[Dict] = None
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 # MODELS - DOCUMENTOS
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 class DocumentoStatusUpdate(BaseModel):
@@ -355,15 +355,15 @@ def calcular_enquadramento(renda: float) -> Dict:
             "color": "var(--green)",
             "bg": "rgba(109,181,128,0.12)",
             "border": "rgba(109,181,128,0.3)",
-            "desc": "Renda â¤ R$360k Â· Limite R$250k/ano Â· Taxa 3â6% a.a. Â· CAF obrigatÃ³rio"
+            "desc": "Renda ≤ R$360k · Limite R$250k/ano · Taxa 3–6% a.a. · CAF obrigatório"
         }
     elif renda <= 1760000:
         return {
             "label": "PRONAMP",
             "color": "var(--gold)",
-            "bg": "rgba(200,168,75,0.12)",
-            "border": "rgba(200,168,75,0.3)",
-            "desc": "Renda R$360kâR$1,76M Â· Limite R$1,5M/ano Â· Taxa 8% a.a."
+            "bg": "rgba(168,133,43,0.12)",
+            "border": "rgba(168,133,43,0.3)",
+            "desc": "Renda R$360k–R$1,76M Â· Limite R$1,5M/ano Â· Taxa 8% a.a."
         }
     else:
         return {
@@ -1077,6 +1077,72 @@ async def obter_estatisticas():
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # ROUTE RAIZ
 # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
+# SYNC DE LAUDOS (recebe push do maya-web após geração de PDF)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class LaudoSyncData(BaseModel):
+    """Dados públicos de um laudo recebidos do maya-web via push."""
+    report_id: str
+    generated_at: str
+    producer_name: str
+    municipality: str
+    latitude: float
+    longitude: float
+    seal_status: str          # APPROVED | PENDING | RISK
+    verification_hash: Optional[str] = None
+    verification_url: Optional[str] = None
+    # Campos opcionais para vincular ao cadastro interno
+    car: Optional[str] = None
+    prod_id: Optional[str] = None
+
+@api_router.post("/laudos/sync", status_code=201)
+async def sync_laudo(request: Request, laudo: LaudoSyncData):
+    """
+    Recebe um laudo gerado pelo maya-web e o persiste na base Maya.
+    Protegido por MAYA_SYNC_SECRET no header X-Sync-Secret.
+    """
+    sync_secret = os.environ.get("MAYA_SYNC_SECRET", "")
+    if sync_secret:
+        header_secret = request.headers.get("x-sync-secret", "")
+        if header_secret != sync_secret:
+            raise HTTPException(status_code=401, detail="Secret inválido.")
+
+    doc = laudo.model_dump()
+    doc["synced_at"] = datetime.now(timezone.utc).isoformat()
+
+    await db.laudos.update_one(
+        {"report_id": laudo.report_id},
+        {"$set": doc},
+        upsert=True
+    )
+    return {"ok": True, "report_id": laudo.report_id}
+
+@api_router.get("/laudos/{report_id}")
+async def get_laudo_publico(report_id: str):
+    """
+    Retorna dados públicos de um laudo para a verify page.
+    Sem autenticação — página escaneada via QR code.
+    """
+    doc = await db.laudos.find_one({"report_id": report_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Laudo não encontrado.")
+
+    # Se há prod_id vinculado, enriquece com dados do produtor
+    produtor = None
+    if doc.get("prod_id"):
+        p = await db.produtores.find_one({"id": doc["prod_id"]}, {"_id": 0, "cpf": 0})
+        if p:
+            produtor = {
+                "nome": p.get("nome"),
+                "municipio": p.get("municipio"),
+                "uf": p.get("uf"),
+                "car": p.get("car"),
+                "atividade": p.get("atividade"),
+            }
+
+    return {"ok": True, "laudo": doc, "produtor": produtor}
+
 @api_router.get("/")
 async def root():
     return {"message": "API MAYA - Sistema de CrÃ©dito Rural", "version": "2.0.0", "auth": "enabled"}
