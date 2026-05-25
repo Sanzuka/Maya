@@ -11,13 +11,17 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 
-# Importar mÃ³dulo de autenticaÃ§Ã£o
+# Importar módulo de autenticação
 from auth import (
     get_password_hash, verify_password, create_access_token,
     get_current_user, require_role, UserRole, Token,
     can_create_user, can_manage_operations, can_approve_dossier,
     can_view_audit, is_read_only, security
 )
+
+# Importar motor de regras MCR e validadores
+from rules_engine import check_elegibilidade
+from validators import validate_documento
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -324,7 +328,7 @@ class OperacaoComProdutor(Operacao):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MODELS - DOCUMENTOS
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 class DocumentoStatusUpdate(BaseModel):
     documentos: Dict[str, StatusDocumento]
 
@@ -333,9 +337,9 @@ class DocumentoStatusResponse(BaseModel):
     documentos: Dict[str, str]
     progresso: Dict
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 # MODELS - DASHBOARD
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 class DashboardStats(BaseModel):
     dossies_hoje: int
     dossies_mes: int
@@ -344,11 +348,11 @@ class DashboardStats(BaseModel):
     total_produtores: int
     taxa_aprovacao: float
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-# FUNÃÃES AUXILIARES
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
+# FUNÇÕES AUXILIARES
+# ─────────────────────────────────────────────────────────────────────────────
 def calcular_enquadramento(renda: float) -> Dict:
-    """Motor de enquadramento automÃ¡tico baseado na renda"""
+    """Motor de enquadramento automático baseado na renda"""
     if renda <= 360000:
         return {
             "label": "PRONAF",
@@ -363,7 +367,7 @@ def calcular_enquadramento(renda: float) -> Dict:
             "color": "var(--gold)",
             "bg": "rgba(168,133,43,0.12)",
             "border": "rgba(168,133,43,0.3)",
-            "desc": "Renda R$360k–R$1,76M Â· Limite R$1,5M/ano Â· Taxa 8% a.a."
+            "desc": "Renda R$360k–R$1,76M · Limite R$1,5M/ano · Taxa 8% a.a."
         }
     else:
         return {
@@ -371,7 +375,7 @@ def calcular_enquadramento(renda: float) -> Dict:
             "color": "var(--blue)",
             "bg": "rgba(122,158,192,0.12)",
             "border": "rgba(122,158,192,0.3)",
-            "desc": "Renda > R$1,76M Â· Sem limite Â· CrÃ©dito livre"
+            "desc": "Renda > R$1,76M · Sem limite · Crédito livre"
         }
 
 def calcular_progresso_documentos(docs: Dict[str, str]) -> Dict:
@@ -413,7 +417,7 @@ def deserialize_datetime(obj, fields=['created_at', 'timestamp', 'uploaded_at', 
     return obj
 
 async def registrar_auditoria(usuario: dict, acao: str, detalhes: str, request: Request = None):
-    """Registra uma aÃ§Ã£o na auditoria"""
+    """Registra uma ação na auditoria"""
     audit = AuditLog(
         usuario_id=usuario["id"],
         usuario_nome=usuario["nome"],
@@ -424,13 +428,13 @@ async def registrar_auditoria(usuario: dict, acao: str, detalhes: str, request: 
     doc = serialize_datetime(audit.model_dump())
     await db.audit_logs.insert_one(doc)
 
-# Dependency helper para injetar o usuÃ¡rio autenticado com DB
+# Dependency helper para injetar o usuário autenticado com DB
 async def get_user(credentials = Depends(security)):
     return await get_current_user(credentials, db)
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-# ROUTES - AUTENTICAÃÃO
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTES - AUTENTICAÇÃO
+# ─────────────────────────────────────────────────────────────────────────────
 @api_router.post("/auth/login", response_model=Token)
 async def login(request: Request, login_data: LoginRequest):
     """Login com email e senha"""
@@ -440,7 +444,7 @@ async def login(request: Request, login_data: LoginRequest):
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
     
     if not user.get("ativo", True):
-        raise HTTPException(status_code=403, detail="UsuÃ¡rio desativado")
+        raise HTTPException(status_code=403, detail="Usuário desativado")
     
     # Atualizar last_login
     await db.usuarios.update_one(
@@ -463,7 +467,7 @@ async def login(request: Request, login_data: LoginRequest):
 
 @api_router.get("/auth/me", response_model=UsuarioResponse)
 async def get_me(credentials = Depends(security)):
-    """Retorna dados do usuÃ¡rio logado"""
+    """Retorna dados do usuário logado"""
     user = await get_current_user(credentials, db)
     return UsuarioResponse(**user)
 
@@ -472,14 +476,14 @@ async def criar_usuario(
     request: Request,
     usuario_data: UsuarioCreate
 ):
-    """Criar novo usuÃ¡rio (apenas Admin)"""
+    """Criar novo usuário (apenas Admin)"""
     
-    # Verificar se email jÃ¡ existe
+    # Verificar se email já existe
     existing = await db.usuarios.find_one({"email": usuario_data.email})
     if existing:
-        raise HTTPException(status_code=400, detail="Email jÃ¡ cadastrado")
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
     
-    # Criar usuÃ¡rio
+    # Criar usuário
     usuario = Usuario(
         nome=usuario_data.nome,
         email=usuario_data.email,
@@ -494,7 +498,7 @@ async def criar_usuario(
     # Registrar auditoria
     await registrar_auditoria(
         {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_USUARIO",
-        f"Criou usuÃ¡rio {usuario.nome} ({usuario.email}) com role {usuario.role}",
+        f"Criou usuário {usuario.nome} ({usuario.email}) com role {usuario.role}",
         request
     )
     
@@ -502,7 +506,7 @@ async def criar_usuario(
 
 @api_router.get("/auth/usuarios", response_model=List[UsuarioResponse])
 async def listar_usuarios():
-    """Listar todos os usuÃ¡rios (apenas Admin)"""
+    """Listar todos os usuários (apenas Admin)"""
     
     usuarios = await db.usuarios.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     usuarios = [deserialize_datetime(u) for u in usuarios]
@@ -514,18 +518,18 @@ async def atualizar_usuario(
     id: str,
     updates: dict
 ):
-    """Atualizar usuÃ¡rio (apenas Admin)"""
+    """Atualizar usuário (apenas Admin)"""
     
-    # NÃ£o permitir atualizar senha diretamente
+    # Não permitir atualizar senha diretamente
     if "password" in updates:
         updates["password_hash"] = get_password_hash(updates.pop("password"))
     
     result = await db.usuarios.update_one({"id": id}, {"$set": updates})
     
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="UsuÃ¡rio nÃ£o encontrado")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
-    await registrar_auditoria({"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_USUARIO", f"Atualizou usuÃ¡rio {id}", request)
+    await registrar_auditoria({"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_USUARIO", f"Atualizou usuário {id}", request)
     
     return {"success": True}
 
@@ -534,17 +538,17 @@ async def desativar_usuario(
     request: Request,
     id: str
 ):
-    """Desativar usuÃ¡rio (apenas Admin)"""
+    """Desativar usuário (apenas Admin)"""
     
     if id == "admin-local":
-        raise HTTPException(status_code=400, detail="NÃ£o pode desativar o prÃ³prio usuÃ¡rio")
+        raise HTTPException(status_code=400, detail="Não pode desativar o próprio usuário")
     
     result = await db.usuarios.update_one({"id": id}, {"$set": {"ativo": False}})
     
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="UsuÃ¡rio nÃ£o encontrado")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
-    await registrar_auditoria({"id":"admin-local","nome":"Dellano","role":"admin"}, "DESATIVAR_USUARIO", f"Desativou usuÃ¡rio {id}", request)
+    await registrar_auditoria({"id":"admin-local","nome":"Dellano","role":"admin"}, "DESATIVAR_USUARIO", f"Desativou usuário {id}", request)
     
     return {"success": True}
 
@@ -558,15 +562,15 @@ async def listar_auditoria(
     logs = [deserialize_datetime(log) for log in logs]
     return logs
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 # ROUTES - PRODUTORES
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 @api_router.post("/produtores", response_model=ProdutorComEnquadramento)
 async def criar_produtor(
     request: Request,
     input: ProdutorCreate
 ):
-    """Criar novo produtor com enquadramento automÃ¡tico"""
+    """Criar novo produtor com enquadramento automático"""
     
     produtor_dict = input.model_dump()
     produtor = Produtor(**produtor_dict, created_by="admin-local")
@@ -601,27 +605,27 @@ async def buscar_produtor(id: str):
     """Buscar produtor por ID"""
     produtor = await db.produtores.find_one({"id": id}, {"_id": 0})
     if not produtor:
-        raise HTTPException(status_code=404, detail="Produtor nÃ£o encontrado")
+        raise HTTPException(status_code=404, detail="Produtor não encontrado")
     
     produtor = deserialize_datetime(produtor)
     enquadramento = calcular_enquadramento(produtor["renda"])
     
     return ProdutorComEnquadramento(**produtor, enquadramento=enquadramento)
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-# ROUTES - OPERAÃÃES
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTES - OPERAÇÕES
+# ─────────────────────────────────────────────────────────────────────────────
 @api_router.post("/operacoes", response_model=Operacao)
 async def criar_operacao(
     request: Request,
     input: OperacaoCreate
 ):
-    """Criar nova operaÃ§Ã£o de crÃ©dito"""
+    """Criar nova operação de crédito"""
     
     # Verificar se produtor existe
     produtor = await db.produtores.find_one({"id": input.prod_id})
     if not produtor:
-        raise HTTPException(status_code=404, detail="Produtor nÃ£o encontrado")
+        raise HTTPException(status_code=404, detail="Produtor não encontrado")
     
     operacao_dict = input.model_dump()
 
@@ -647,11 +651,11 @@ async def criar_operacao(
 
     operacao = Operacao(**operacao_dict, created_by="admin-local")
     
-    # Salvar operaÃ§Ã£o
+    # Salvar operação
     doc = serialize_datetime(operacao.model_dump())
     await db.operacoes.insert_one(doc)
     
-    # Criar documentos padrÃ£o para a operaÃ§Ã£o
+    # Criar documentos padrão para a operação
     docs_padrao = {
         "rg": "pendente",
         "caf": "pendente",
@@ -674,7 +678,7 @@ async def criar_operacao(
     # Registrar auditoria
     await registrar_auditoria(
         {"id":"admin-local","nome":"Dellano","role":"admin"}, "CRIAR_OPERACAO",
-        f"Criou operaÃ§Ã£o {operacao.id} para produtor {produtor['nome']}",
+        f"Criou operação {operacao.id} para produtor {produtor['nome']}",
         request
     )
     
@@ -687,7 +691,7 @@ async def criar_operacao(
 async def listar_operacoes(
     status: Optional[str] = None
 ):
-    """Listar todas as operaÃ§Ãµes com filtro opcional de status"""
+    """Listar todas as operações com filtro opcional de status"""
     query = {}
     if status and status != "todas":
         query["status"] = status
@@ -718,10 +722,10 @@ async def listar_operacoes(
 
 @api_router.get("/operacoes/{id}", response_model=OperacaoComProdutor)
 async def buscar_operacao(id: str):
-    """Buscar operaÃ§Ã£o por ID com dados completos"""
+    """Buscar operação por ID com dados completos"""
     operacao = await db.operacoes.find_one({"id": id}, {"_id": 0})
     if not operacao:
-        raise HTTPException(status_code=404, detail="OperaÃ§Ã£o nÃ£o encontrada")
+        raise HTTPException(status_code=404, detail="Operação não encontrada")
     
     operacao = deserialize_datetime(operacao)
     
@@ -746,9 +750,9 @@ async def atualizar_operacao(
     id: str,
     status: StatusOperacao
 ):
-    """Atualizar status da operaÃ§Ã£o"""
+    """Atualizar status da operação"""
     
-    # Se for aprovar, verificar permissÃ£o especial
+    # Se for aprovar, verificar permissão especial
     # aprovacao permitida
     
     update_data = {"status": status.value}
@@ -759,31 +763,31 @@ async def atualizar_operacao(
     result = await db.operacoes.update_one({"id": id}, {"$set": update_data})
     
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="OperaÃ§Ã£o nÃ£o encontrada")
+        raise HTTPException(status_code=404, detail="Operação não encontrada")
     
     await registrar_auditoria(
         {"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_OPERACAO",
-        f"Alterou status da operaÃ§Ã£o {id} para {status.value}",
+        f"Alterou status da operação {id} para {status.value}",
         request
     )
     
     return {"success": True, "message": "Status atualizado"}
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 # ROUTES - DOCUMENTOS
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 @api_router.put("/operacoes/{id}/documentos", response_model=DocumentoStatusResponse)
 async def atualizar_documentos(
     request: Request,
     id: str,
     input: DocumentoStatusUpdate
 ):
-    """Atualizar status dos documentos de uma operaÃ§Ã£o"""
+    """Atualizar status dos documentos de uma operação"""
     
-    # Verificar se operaÃ§Ã£o existe
+    # Verificar se operação existe
     operacao = await db.operacoes.find_one({"id": id})
     if not operacao:
-        raise HTTPException(status_code=404, detail="OperaÃ§Ã£o nÃ£o encontrada")
+        raise HTTPException(status_code=404, detail="Operação não encontrada")
     
     # Atualizar documentos
     result = await db.documentos.update_one(
@@ -803,7 +807,7 @@ async def atualizar_documentos(
     documentos = docs.get("documentos", {})
     progresso = calcular_progresso_documentos(documentos)
     
-    # Atualizar status da operaÃ§Ã£o baseado nos documentos
+    # Atualizar status da operação baseado nos documentos
     if progresso["percentual"] == 100:
         await db.operacoes.update_one(
             {"id": id},
@@ -812,7 +816,7 @@ async def atualizar_documentos(
     
     await registrar_auditoria(
         {"id":"admin-local","nome":"Dellano","role":"admin"}, "ATUALIZAR_DOCUMENTOS",
-        f"Atualizou documentos da operaÃ§Ã£o {id}",
+        f"Atualizou documentos da operação {id}",
         request
     )
     
@@ -824,10 +828,10 @@ async def atualizar_documentos(
 
 @api_router.get("/operacoes/{id}/documentos", response_model=DocumentoStatusResponse)
 async def buscar_documentos(id: str):
-    """Buscar status dos documentos de uma operaÃ§Ã£o"""
+    """Buscar status dos documentos de uma operação"""
     docs = await db.documentos.find_one({"operacao_id": id}, {"_id": 0})
     if not docs:
-        raise HTTPException(status_code=404, detail="Documentos nÃ£o encontrados")
+        raise HTTPException(status_code=404, detail="Documentos não encontrados")
     
     documentos = docs.get("documentos", {})
     progresso = calcular_progresso_documentos(documentos)
@@ -838,9 +842,9 @@ async def buscar_documentos(id: str):
         progresso=progresso
     )
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 # ROUTES - DASHBOARD
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROUTES - PRODUTORES (LISTAGEM)
@@ -1025,23 +1029,23 @@ async def verificar_gleba_pre_contratacao(
 
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
 async def obter_estatisticas():
-    """Obter estatÃ­sticas para o dashboard"""
+    """Obter estatísticas para o dashboard"""
     from datetime import timedelta
     
     hoje = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     inicio_mes = hoje.replace(day=1)
     
-    # Contar operaÃ§Ãµes de hoje
+    # Contar operações de hoje
     ops_hoje = await db.operacoes.count_documents({
         "created_at": {"$gte": hoje.isoformat()}
     })
     
-    # Contar operaÃ§Ãµes do mÃªs
+    # Contar operações do mês
     ops_mes = await db.operacoes.count_documents({
         "created_at": {"$gte": inicio_mes.isoformat()}
     })
     
-    # Calcular crÃ©dito total do mÃªs
+    # Calcular crédito total do mês
     pipeline = [
         {"$match": {"created_at": {"$gte": inicio_mes.isoformat()}}},
         {"$group": {"_id": None, "total": {"$sum": "$valor"}}}
@@ -1059,7 +1063,7 @@ async def obter_estatisticas():
     # Total de produtores
     total_produtores = await db.produtores.count_documents({})
     
-    # Taxa de aprovaÃ§Ã£o
+    # Taxa de aprovação
     ops_prontas = await db.operacoes.count_documents({"status": "pronto"})
     ops_encaminhadas = await db.operacoes.count_documents({"status": "encaminhado"})
     total_ops = await db.operacoes.count_documents({})
@@ -1074,9 +1078,61 @@ async def obter_estatisticas():
         taxa_aprovacao=taxa_aprovacao
     )
 
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTES - ELEGIBILIDADE MCR (Sprint 1 — T1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_router.post("/check-elegibilidade")
+async def check_elegibilidade_endpoint(req: ElegibilidadeRequest):
+    """
+    Verifica a elegibilidade de um produtor para uma linha/modalidade de crédito.
+    Baseado nas regras MCR 2025/2026 (BACEN).
+    """
+    # Buscar produtor
+    produtor = await db.produtores.find_one({"id": req.produtor_id}, {"_id": 0})
+    if not produtor:
+        raise HTTPException(status_code=404, detail="Produtor não encontrado")
+
+    # Buscar documentos do checklist da operação mais recente (se existir)
+    doc_status = None
+    ultima_op = await db.operacoes.find_one(
+        {"prod_id": req.produtor_id},
+        {"_id": 0, "id": 1},
+        sort=[("created_at", -1)]
+    )
+    if ultima_op:
+        docs_db = await db.documentos.find_one({"operacao_id": ultima_op["id"]}, {"_id": 0})
+        if docs_db:
+            doc_status = docs_db.get("documentos", {})
+
+    resultado = check_elegibilidade(
+        produtor=produtor,
+        linha=req.linha,
+        modalidade=req.modalidade,
+        valor_solicitado=req.valor_solicitado,
+        finalidade_especifica=req.finalidade_especifica,
+        documentos_checklist=doc_status,
+    )
+    return resultado
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ROUTES - VALIDAÇÃO DE DOCUMENTOS (Sprint 1 — T4)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_router.post("/validate-documento")
+async def validate_documento_endpoint(req: ValidateDocumentoRequest):
+    """
+    Valida o formato de documentos: CPF, CCIR, CAR, CAF.
+    Validação algorítmica sem API externa.
+    """
+    resultado = await validate_documento(req.tipo, req.valor)
+    return resultado
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ROUTE RAIZ
-# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
 # SYNC DE LAUDOS (recebe push do maya-web após geração de PDF)
 # ─────────────────────────────────────────────────────────────────────────────

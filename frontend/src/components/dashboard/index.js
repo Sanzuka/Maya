@@ -31,7 +31,21 @@ export default function Dashboard({ setScreen, setSelectedOp }) {
     carregarDados();
   }, []);
 
-  const formatCurrency = (val) =>
+  const formatCurrency = (val) => {
+    if (val >= 1_000_000) {
+      return `R$ ${(val / 1_000_000).toFixed(1).replace('.', ',')}M`;
+    }
+    if (val >= 1_000) {
+      return `R$ ${(val / 1_000).toFixed(0)}k`;
+    }
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: 0,
+    }).format(val);
+  };
+
+  const formatCurrencyFull = (val) =>
     new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
@@ -58,6 +72,7 @@ export default function Dashboard({ setScreen, setSelectedOp }) {
     );
   }
 
+  const META_MES = 60;
   const kpis = [
     {
       titulo: "Dossiês Hoje",
@@ -67,17 +82,19 @@ export default function Dashboard({ setScreen, setSelectedOp }) {
     {
       titulo: "Este Mês",
       valor: stats.dossies_mes.toString(),
-      delta: "meta: 60 dossiês",
+      delta: null,
+      progressBar: { atual: stats.dossies_mes, meta: META_MES },
     },
     {
       titulo: "Crédito (mês)",
       valor: formatCurrency(stats.credito_mes),
-      delta: "encaminhado ao banco",
+      delta: formatCurrencyFull(stats.credito_mes) + " encaminhado",
     },
     {
       titulo: "Docs Pendentes",
       valor: stats.docs_pendentes.toString(),
       delta: `de ${stats.total_produtores} produtores`,
+      clickable: true,
     },
   ];
 
@@ -91,7 +108,11 @@ export default function Dashboard({ setScreen, setSelectedOp }) {
       {/* KPI Cards */}
       <div className="flex gap-4">
         {kpis.map((kpi) => (
-          <KPICard key={kpi.titulo} {...kpi} />
+          <KPICard
+            key={kpi.titulo}
+            {...kpi}
+            onClick={kpi.clickable ? () => setScreen && setScreen("operacoes") : undefined}
+          />
         ))}
       </div>
 

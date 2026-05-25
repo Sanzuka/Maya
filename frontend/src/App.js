@@ -247,6 +247,37 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .loading{text-align:center;padding:40px;color:var(--mid);font-size:11px;}
 .error{background:rgba(192,90,74,.1);border:1px solid rgba(192,90,74,.3);border-radius:6px;padding:12px 16px;color:var(--red);font-size:10px;margin-bottom:14px;}
 .success{background:rgba(109,181,128,.1);border:1px solid rgba(109,181,128,.3);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:10px;color:var(--green);display:flex;align-items:center;gap:8px;}
+
+/* NOVA OPERACAO — layout 2 colunas */
+.nova-op-layout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start;}
+@media(max-width:1100px){.nova-op-layout{grid-template-columns:1fr;}}
+
+/* ELEGIBILIDADE PANEL */
+.eleg-panel{background:var(--bg2);border:1px solid var(--bdr2);border-radius:6px;padding:14px;position:sticky;top:0;}
+.eleg-title{font-size:9px;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--bdr2);display:flex;align-items:center;gap:6px;}
+.eleg-score-wrap{display:flex;flex-direction:column;align-items:center;margin-bottom:12px;}
+.eleg-obs{background:var(--bg3);border:1px solid var(--bdr2);border-radius:4px;padding:10px;font-size:9px;color:var(--mid);line-height:1.5;margin-bottom:10px;}
+.eleg-obs b{color:var(--gold);display:block;margin-bottom:3px;}
+.eleg-docs-title{font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:5px;}
+.eleg-doc-item{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:9px;}
+.eleg-loading{text-align:center;padding:20px;color:var(--dim);font-size:9px;}
+.eleg-idle{text-align:center;padding:20px;color:var(--dim);font-size:9px;line-height:1.5;}
+.eleg-alert-banner{border-radius:4px;padding:8px 10px;font-size:9px;font-weight:600;letter-spacing:.5px;margin-bottom:10px;text-align:center;}
+.eleg-aware-check{display:flex;align-items:flex-start;gap:7px;padding:8px;background:var(--bg3);border:1px solid var(--bdr2);border-radius:4px;font-size:8.5px;color:var(--mid);cursor:pointer;margin-top:8px;line-height:1.4;}
+.eleg-aware-check input{margin-top:1px;cursor:pointer;flex-shrink:0;}
+
+/* VALIDAÇÃO INLINE */
+.field-valid{font-size:8px;margin-top:3px;display:flex;align-items:center;gap:3px;}
+.field-valid.ok{color:var(--green);}
+.field-valid.err{color:var(--red);}
+.fg input.valid-ok{border-color:rgba(45,106,79,.5) !important;}
+.fg input.valid-err{border-color:rgba(229,57,53,.4) !important;}
+
+/* KPI PROGRESS BAR */
+.kpi-prog-wrap{margin-top:8px;}
+.kpi-prog-bg{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:4px;}
+.kpi-prog-fill{height:100%;border-radius:2px;background:var(--green);transition:width .4s ease;}
+.kpi-prog-label{font-size:8px;color:var(--dim);display:flex;justify-content:space-between;}
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,11 +287,46 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 // ─────────────────────────────────────────────────────────────────────────────
 // SCREEN: CADASTRO DE PRODUTOR
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOK: Validação inline de documentos via API
+// ─────────────────────────────────────────────────────────────────────────────
+function useDocValidation() {
+  const [validations, setValidations] = useState({});
+
+  const validate = async (tipo, valor, fieldKey) => {
+    if (!valor || !valor.trim()) {
+      setValidations(v => ({ ...v, [fieldKey]: null }));
+      return;
+    }
+    try {
+      const res = await axios.post(`${API}/validate-documento`, { tipo, valor });
+      setValidations(v => ({ ...v, [fieldKey]: res.data }));
+    } catch (e) {
+      // silently ignore network errors during validation
+    }
+  };
+
+  return { validations, validate };
+}
+
+function FieldValidation({ result }) {
+  if (!result) return null;
+  return (
+    <div className={`field-valid ${result.valid ? 'ok' : 'err'}`}>
+      {result.valid ? '✓' : '✗'} {result.message}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCREEN: CADASTRO DE PRODUTOR
+// ─────────────────────────────────────────────────────────────────────────────
 function CadastroProd({ setScreen }) {
   const [form, setForm] = useState({ nome:"", cpf:"", estado_civil:"solteiro", municipio:"", uf:"ES", renda:"", modulos:"", atividade:"", caf:"", ccir:"", car:"", cafir:"" });
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { validations, validate } = useDocValidation();
 
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const renda = parseFloat(form.renda) || 0;
@@ -379,19 +445,242 @@ function CadastroProd({ setScreen }) {
           )}
         </div>
 
-        {/* Documentos Rurais */}
+        {/* Dados Pessoais — CPF com validação inline */}
+        <div className="form-section">
+          <div className="form-section-title">Dados Pessoais</div>
+          <div className="form-row" style={{marginBottom:12}}>
+            <div className="fg">
+              <label>Nome Completo</label>
+              <input value={form.nome} onChange={e=>set("nome",e.target.value)} placeholder="Ex: João da Silva Pereira"/>
+            </div>
+            <div className="fg">
+              <label>CPF</label>
+              <input
+                value={form.cpf}
+                onChange={e=>set("cpf",e.target.value)}
+                onBlur={e=>validate("CPF",e.target.value,"cpf")}
+                placeholder="000.000.000-00"
+                className={validations.cpf ? (validations.cpf.valid ? 'valid-ok' : 'valid-err') : ''}
+              />
+              <FieldValidation result={validations.cpf} />
+            </div>
+          </div>
+          <div className="form-row3">
+            <div className="fg"><label>Estado Civil</label>
+              <select value={form.estado_civil} onChange={e=>set("estado_civil",e.target.value)}>
+                <option value="solteiro">Solteiro(a)</option>
+                <option value="casado">Casado(a)</option>
+                <option value="divorciado">Divorciado(a)</option>
+                <option value="viuvo">Viúvo(a)</option>
+              </select>
+            </div>
+            <div className="fg"><label>Município</label><input value={form.municipio} onChange={e=>set("municipio",e.target.value)} placeholder="Marilândia"/></div>
+            <div className="fg"><label>UF</label>
+              <select value={form.uf} onChange={e=>set("uf",e.target.value)}>
+                {["ES","MG","BA","GO","MT","MS","PR","SP","RS"].map(u=><option key={u}>{u}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Documentos Rurais com validação inline */}
         <div className="form-section">
           <div className="form-section-title">Registros e Certificados</div>
           <div className="form-row" style={{marginBottom:12}}>
-            <div className="fg"><label>Nº CAF</label><input value={form.caf} onChange={e=>set("caf",e.target.value)} placeholder="CAF-ES-00000"/></div>
-            <div className="fg"><label>Nº CCIR</label><input value={form.ccir} onChange={e=>set("ccir",e.target.value)} placeholder="CCIR-2024-00"/></div>
+            <div className="fg">
+              <label>Nº CAF</label>
+              <input
+                value={form.caf}
+                onChange={e=>set("caf",e.target.value)}
+                onBlur={e=>validate("CAF",e.target.value,"caf")}
+                placeholder="CAF-ES-00000"
+                className={validations.caf ? (validations.caf.valid ? 'valid-ok' : 'valid-err') : ''}
+              />
+              <FieldValidation result={validations.caf} />
+            </div>
+            <div className="fg">
+              <label>Nº CCIR</label>
+              <input
+                value={form.ccir}
+                onChange={e=>set("ccir",e.target.value)}
+                onBlur={e=>validate("CCIR",e.target.value,"ccir")}
+                placeholder="12345678-9"
+                className={validations.ccir ? (validations.ccir.valid ? 'valid-ok' : 'valid-err') : ''}
+              />
+              <FieldValidation result={validations.ccir} />
+            </div>
           </div>
           <div className="form-row">
-            <div className="fg"><label>Nº CAR</label><input value={form.car} onChange={e=>set("car",e.target.value)} placeholder="ES-0000000"/></div>
+            <div className="fg">
+              <label>Nº CAR</label>
+              <input
+                value={form.car}
+                onChange={e=>set("car",e.target.value)}
+                onBlur={e=>validate("CAR",e.target.value,"car")}
+                placeholder="ES-0000000000000000000"
+                className={validations.car ? (validations.car.valid ? 'valid-ok' : 'valid-err') : ''}
+              />
+              <FieldValidation result={validations.car} />
+            </div>
             <div className="fg"><label>Nº CAFIR</label><input value={form.cafir} onChange={e=>set("cafir",e.target.value)} placeholder="CAFIR-0000"/></div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENT: PAINEL DE ELEGIBILIDADE MCR (Sprint 1 — T2)
+// ─────────────────────────────────────────────────────────────────────────────
+function ScoreCircle({ score }) {
+  const r = 30, circ = 2 * Math.PI * r;
+  const offset = circ - (score / 100) * circ;
+  const color = score >= 75 ? 'var(--green)' : score >= 50 ? 'var(--gold)' : 'var(--red)';
+  return (
+    <svg width="80" height="80" viewBox="0 0 80 80">
+      <circle cx="40" cy="40" r={r} fill="none" stroke="var(--bg4)" strokeWidth="6" />
+      <circle cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="6"
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round"
+        style={{transform:'rotate(-90deg)',transformOrigin:'50% 50%',transition:'stroke-dashoffset .5s ease'}}
+      />
+      <text x="40" y="44" textAnchor="middle" fill={color}
+        style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:20,fontWeight:800}}>
+        {score}
+      </text>
+    </svg>
+  );
+}
+
+function ElegibilidadePanel({ prodId, linha, modalidade, valor, onUsarAlternativa, ciente, setCiente }) {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const timerRef = React.useRef(null);
+
+  useEffect(() => {
+    if (!prodId || !linha || !modalidade) {
+      setResult(null);
+      return;
+    }
+    // Debounce 800ms
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await axios.post(`${API}/check-elegibilidade`, {
+          produtor_id: prodId,
+          linha,
+          modalidade,
+          valor_solicitado: parseFloat(valor) || 0,
+        });
+        setResult(res.data);
+      } catch (e) {
+        setResult(null);
+      } finally {
+        setLoading(false);
+      }
+    }, 800);
+    return () => clearTimeout(timerRef.current);
+  }, [prodId, linha, modalidade, valor]);
+
+  const elegColor = result?.elegivel === true ? 'var(--green)'
+    : result?.elegivel === 'parcial' ? 'var(--gold)' : 'var(--red)';
+  const elegLabel = result?.elegivel === true ? 'ELEGÍVEL'
+    : result?.elegivel === 'parcial' ? 'PARCIAL' : 'INELEGÍVEL';
+
+  return (
+    <div className="eleg-panel">
+      <div className="eleg-title">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        Análise de Elegibilidade
+      </div>
+
+      {!prodId && (
+        <div className="eleg-idle">
+          Selecione um produtor para<br/>análise automática de elegibilidade.
+        </div>
+      )}
+
+      {prodId && loading && (
+        <div className="eleg-loading">Analisando MCR...</div>
+      )}
+
+      {prodId && !loading && result && (
+        <>
+          {/* Score circular */}
+          <div className="eleg-score-wrap">
+            <ScoreCircle score={result.score} />
+            <div style={{marginTop:4,fontSize:8.5,fontWeight:700,letterSpacing:1.5,color:elegColor}}>
+              {elegLabel}
+            </div>
+          </div>
+
+          {/* Banner de status */}
+          {result.motivos_bloqueio?.length > 0 && (
+            <div className="eleg-alert-banner" style={{
+              background:'rgba(229,57,53,.08)',
+              border:'1px solid rgba(229,57,53,.3)',
+              color:'var(--red)'
+            }}>
+              ⚠ {result.motivos_bloqueio.length} motivo(s) de bloqueio
+            </div>
+          )}
+
+          {/* Observação da Maya */}
+          <div className="eleg-obs">
+            <b>Observação da Maya</b>
+            {result.observacao_maya}
+          </div>
+
+          {/* Documentos OK */}
+          {result.documentos_ok?.length > 0 && (
+            <div style={{marginBottom:8}}>
+              <div className="eleg-docs-title">Documentos OK</div>
+              {result.documentos_ok.map(d => (
+                <div key={d} className="eleg-doc-item" style={{color:'var(--green)'}}>
+                  <span>✓</span> <span>{d}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Documentos Faltantes */}
+          {result.documentos_faltantes?.length > 0 && (
+            <div style={{marginBottom:8}}>
+              <div className="eleg-docs-title">Pendentes / Faltantes</div>
+              {result.documentos_faltantes.map(d => (
+                <div key={d} className="eleg-doc-item" style={{color:'var(--red)'}}>
+                  <span>✗</span> <span>{d}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Sugestão de linha alternativa */}
+          {result.linha_alternativa_sugerida && (
+            <button
+              className="btn btn-gold"
+              style={{width:'100%',justifyContent:'center',fontSize:9,padding:'6px 10px',marginBottom:8}}
+              onClick={() => onUsarAlternativa && onUsarAlternativa(result.linha_alternativa_sugerida)}
+            >
+              Usar {result.linha_alternativa_sugerida} em vez disso
+            </button>
+          )}
+
+          {/* Checkbox ciente — nunca bloqueia o envio */}
+          <label className="eleg-aware-check">
+            <input
+              type="checkbox"
+              checked={ciente}
+              onChange={e => setCiente(e.target.checked)}
+            />
+            Ciente das pendências — prosseguir mesmo assim
+          </label>
+        </>
+      )}
     </div>
   );
 }
@@ -412,6 +701,7 @@ function Operacoes({ setScreen, setSelectedOp }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [cienteAware, setCienteAware] = useState(false);
 
   useEffect(() => {
     carregarDados();
@@ -497,13 +787,10 @@ function Operacoes({ setScreen, setSelectedOp }) {
         gleba
       });
 
-      // Exibir alerta de sobreposição se houver
       if (res.data?.alerta_gleba) {
         const al = res.data.alerta_gleba;
         if (al.status === "conflito") {
           setSuccess("Operação criada com ALERTA: " + al.conflitos.map(c=>c.referencia_mcr||c.tipo).join("; "));
-        } else if (al.status?.includes("tolerancia")) {
-          setSuccess("Operação criada — verificar tolerância de área MCR: " + al.status);
         } else {
           setSuccess("Operação criada com sucesso!");
         }
@@ -514,6 +801,7 @@ function Operacoes({ setScreen, setSelectedOp }) {
       setShowForm(false);
       setShowGleba(false);
       setGlebaAlerta(null);
+      setCienteAware(false);
       setForm({ prod_id:"", linha:"PRONAF", modalidade:"Custeio Agrícola", valor:"", cultura:"", banco:"Sicoob" });
       setGlebaForm({ codigo_car:"", area_contratada_ha:"", municipio_ibge:"", descricao:"", vertices_raw:"", identificacao:1 });
       carregarDados();
@@ -543,159 +831,140 @@ function Operacoes({ setScreen, setSelectedOp }) {
       {success && <div className="success"><Icon d={IC.check} size={13}/> {success}</div>}
 
       {showForm && (
-        <div className="form-section" style={{marginBottom:14}}>
-          <div className="form-section-title">Nova Operação de Crédito</div>
-          <div className="form-row" style={{marginBottom:12}}>
-            <div className="fg">
-              <label>Produtor</label>
-              <select value={form.prod_id} onChange={e=>set("prod_id",e.target.value)}>
-                <option value="">Selecione o produtor...</option>
-                {produtores.map(p=><option key={p.id} value={p.id}>{p.nome} — {p.municipio}</option>)}
-              </select>
-            </div>
-            <div className="fg">
-              <label>Banco</label>
-              <select value={form.banco} onChange={e=>set("banco",e.target.value)}>
-                {["Sicoob","Banco do Brasil","Caixa Econômica","Bradesco"].map(b=><option key={b}>{b}</option>)}
-              </select>
-            </div>
-          </div>
-          {prod && (
-            <div style={{background:"rgba(168,133,43,.06)",border:"1px solid var(--bdr2)",borderRadius:4,padding:"8px 12px",marginBottom:12,fontSize:9.5,color:"var(--mid)"}}>
-              <b style={{color:enquad.color}}>{enquad.label}</b> · {prod.nome} · Renda: {formatCurrency(renda)} · {enquad.desc}
-            </div>
-          )}
-          <div className="form-row3" style={{marginBottom:12}}>
-            <div className="fg">
-              <label>Linha</label>
-              <select value={form.linha} onChange={e=>set("linha",e.target.value)}>
-                <option>PRONAF</option><option>PRONAMP</option><option>Livre</option>
-              </select>
-            </div>
-            <div className="fg">
-              <label>Modalidade</label>
-              <select value={form.modalidade} onChange={e=>set("modalidade",e.target.value)}>
-                {["Custeio Agrícola","Custeio Pecuário","Investimento","Mais Alimentos"].map(m=><option key={m}>{m}</option>)}
-              </select>
-            </div>
-            <div className="fg">
-              <label>Cultura / Atividade</label>
-              <select value={form.cultura} onChange={e=>set("cultura",e.target.value)}>
-                <option value="">Selecione...</option>
-                {["Café","Milho","Soja","Tomate","Pasto","Eucalipto","Feijão"].map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="form-row" style={{marginBottom:12}}>
-            <div className="fg">
-              <label>Valor Solicitado (R$)</label>
-              <input type="number" value={form.valor} onChange={e=>set("valor",e.target.value)} placeholder="Ex: 85000"/>
-            </div>
-          </div>
-
-          {/* SEÇÃO GLEBA — MCR 2-1-2 / SICOR Campo 25 */}
-          <div style={{borderTop:"1px solid var(--bdr)",paddingTop:12,marginBottom:12}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showGleba?10:0}}>
-              <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"var(--dim)"}}>
-                LOCALIZAÇÃO DA GLEBA <span style={{color:"var(--gold)",fontSize:9,marginLeft:6}}>MCR 2-1-2 · SICOR Campo 25</span>
+        <div style={{marginBottom:14}}>
+          <div className="nova-op-layout">
+            {/* coluna esquerda — formulário */}
+            <div className="form-section">
+              <div className="form-section-title">Nova Operação de Crédito</div>
+              <div className="form-row" style={{marginBottom:12}}>
+                <div className="fg">
+                  <label>Produtor</label>
+                  <select value={form.prod_id} onChange={e=>set("prod_id",e.target.value)}>
+                    <option value="">Selecione o produtor...</option>
+                    {produtores.map(p=><option key={p.id} value={p.id}>{p.nome} — {p.municipio}</option>)}
+                  </select>
+                </div>
+                <div className="fg">
+                  <label>Banco</label>
+                  <select value={form.banco} onChange={e=>set("banco",e.target.value)}>
+                    {["Sicoob","Banco do Brasil","Caixa Econômica","Bradesco","BNB"].map(b=><option key={b}>{b}</option>)}
+                  </select>
+                </div>
               </div>
-              <button className={`btn ${showGleba?"btn-ghost":"btn-ghost"}`} style={{fontSize:9,padding:"3px 10px"}}
-                onClick={()=>setShowGleba(!showGleba)}>
-                {showGleba ? "▲ OCULTAR" : "▼ INFORMAR GLEBA"}
-              </button>
-            </div>
-
-            {showGleba && (
-              <div>
-                <div className="form-row3" style={{marginBottom:8}}>
-                  <div className="fg">
-                    <label>Código CAR da Gleba</label>
-                    <input value={glebaForm.codigo_car}
-                      onChange={e=>setGlebaForm(f=>({...f,codigo_car:e.target.value}))}
-                      placeholder="ES-3200300-..." style={{fontFamily:"monospace",fontSize:11}}/>
-                  </div>
-                  <div className="fg">
-                    <label>Área Contratada (ha)</label>
-                    <input type="number" step="0.01" value={glebaForm.area_contratada_ha}
-                      onChange={e=>setGlebaForm(f=>({...f,area_contratada_ha:e.target.value}))}
-                      placeholder="Ex: 3.5"/>
-                  </div>
-                  <div className="fg">
-                    <label>Cód. Município IBGE</label>
-                    <input value={glebaForm.municipio_ibge}
-                      onChange={e=>setGlebaForm(f=>({...f,municipio_ibge:e.target.value}))}
-                      placeholder="Ex: 3200300" style={{fontFamily:"monospace",fontSize:11}}/>
-                  </div>
+              {prod && (
+                <div style={{background:"rgba(168,133,43,.06)",border:"1px solid var(--bdr2)",borderRadius:4,padding:"8px 12px",marginBottom:12,fontSize:9.5,color:"var(--mid)"}}>
+                  <b style={{color:enquad.color}}>{enquad.label}</b> · {prod.nome} · Renda: {formatCurrency(renda)} · {enquad.desc}
                 </div>
-
-                <div style={{marginBottom:8}}>
-                  <label style={{fontSize:10,color:"var(--dim)",fontWeight:600,letterSpacing:.5,display:"block",marginBottom:4}}>
-                    VÉRTICES DO PERÍMETRO — SIRGAS2000 (uma linha por ponto: lat, lon, alt)
-                  </label>
-                  <textarea
-                    value={glebaForm.vertices_raw}
-                    onChange={e=>setGlebaForm(f=>({...f,vertices_raw:e.target.value}))}
-                    placeholder={"-19.420512, -40.552301, 680\n-19.421045, -40.551890, 682\n-19.420800, -40.551200, 679\n..."}
-                    rows={5}
-                    style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,
-                      padding:"7px 10px",fontSize:11,color:"var(--text)",fontFamily:"monospace",
-                      boxSizing:"border-box",resize:"vertical"}}/>
-                  <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>
-                    Sistema de referência: SIRGAS2000 · 6 casas decimais · máx. 100 pontos por gleba · altitude em metros (opcional)
-                  </div>
+              )}
+              <div className="form-row3" style={{marginBottom:12}}>
+                <div className="fg">
+                  <label>Linha</label>
+                  <select value={form.linha} onChange={e=>set("linha",e.target.value)}>
+                    <option>PRONAF</option><option>PRONAMP</option><option>Livre</option>
+                  </select>
                 </div>
-
-                <div style={{marginBottom:8}}>
-                  <label style={{fontSize:10,color:"var(--dim)",fontWeight:600,letterSpacing:.5,display:"block",marginBottom:4}}>DESCRIÇÃO DA GLEBA</label>
-                  <input value={glebaForm.descricao}
-                    onChange={e=>setGlebaForm(f=>({...f,descricao:e.target.value}))}
-                    placeholder="Ex: Talhão norte — área de café arábica, terreno ondulado"
-                    style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"6px 9px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                <div className="fg">
+                  <label>Modalidade</label>
+                  <select value={form.modalidade} onChange={e=>set("modalidade",e.target.value)}>
+                    {["Custeio Agrícola","Custeio Pecuário","Investimento","Mais Alimentos","Comercialização"].map(m=><option key={m}>{m}</option>)}
+                  </select>
                 </div>
+                <div className="fg">
+                  <label>Cultura / Atividade</label>
+                  <select value={form.cultura} onChange={e=>set("cultura",e.target.value)}>
+                    <option value="">Selecione...</option>
+                    {["Café","Milho","Soja","Tomate","Pasto","Eucalipto","Feijão"].map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row" style={{marginBottom:12}}>
+                <div className="fg">
+                  <label>Valor Solicitado (R$)</label>
+                  <input type="number" value={form.valor} onChange={e=>set("valor",e.target.value)} placeholder="Ex: 85000"/>
+                </div>
+              </div>
 
-                {/* Botão verificação pré-contratação */}
-                {form.prod_id && glebaForm.codigo_car && (
-                  <div style={{marginBottom:8}}>
-                    <button className="btn btn-ghost" style={{fontSize:9,padding:"4px 12px"}}
-                      onClick={verificarGleba} disabled={verificandoGleba}>
-                      <Icon d={IC.search} size={10}/> {verificandoGleba ? "VERIFICANDO..." : "VERIFICAR SOBREPOSIÇÃO (MCR 3-6-3-b)"}
-                    </button>
+              {/* SEÇÃO GLEBA */}
+              <div style={{borderTop:"1px solid var(--bdr)",paddingTop:12,marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:showGleba?10:0}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1,color:"var(--dim)"}}>
+                    LOCALIZAÇÃO DA GLEBA <span style={{color:"var(--gold)",fontSize:9,marginLeft:6}}>MCR 2-1-2 · SICOR Campo 25</span>
                   </div>
-                )}
-
-                {/* Resultado da verificação */}
-                {glebaAlerta && (
-                  <div style={{
-                    padding:"10px 14px", borderRadius:4, marginBottom:8, fontSize:11,
-                    background: glebaAlerta.status==="livre" ? "rgba(109,181,128,.08)" : "rgba(220,38,38,.08)",
-                    border: `1px solid ${glebaAlerta.status==="livre" ? "rgba(109,181,128,.3)" : "rgba(220,38,38,.3)"}`,
-                    color: glebaAlerta.status==="livre" ? "var(--green)" : "var(--red)"
-                  }}>
-                    <div style={{fontWeight:700,marginBottom:4}}>
-                      {glebaAlerta.status==="livre" ? "✓ Gleba disponível para contratação" : "⚠ Impedimento detectado"}
-                    </div>
-                    {glebaAlerta.area_disponivel_ha != null &&
-                      <div style={{fontSize:10,color:"var(--dim)"}}>Área disponível no imóvel: {glebaAlerta.area_disponivel_ha} ha</div>}
-                    {glebaAlerta.conflitos?.map((c,i) => (
-                      <div key={i} style={{fontSize:10,marginTop:4,color:"var(--mid)"}}>
-                        • {c.tipo?.replace(/_/g," ")} {c.operacao_id ? `— Op. ${c.operacao_id}` : ""}
-                        {c.referencia_mcr && <span style={{color:"var(--dim)"}}> | {c.referencia_mcr}</span>}
+                  <button className="btn btn-ghost" style={{fontSize:9,padding:"3px 10px"}} onClick={()=>setShowGleba(!showGleba)}>
+                    {showGleba ? "▲ OCULTAR" : "▼ INFORMAR GLEBA"}
+                  </button>
+                </div>
+                {showGleba && (
+                  <div>
+                    <div className="form-row3" style={{marginBottom:8}}>
+                      <div className="fg">
+                        <label>Código CAR da Gleba</label>
+                        <input value={glebaForm.codigo_car} onChange={e=>setGlebaForm(f=>({...f,codigo_car:e.target.value}))} placeholder="ES-3200300-..." style={{fontFamily:"monospace",fontSize:11}}/>
                       </div>
-                    ))}
-                    <div style={{fontSize:9,color:"var(--dim)",marginTop:4}}>{glebaAlerta.orientacao}</div>
+                      <div className="fg">
+                        <label>Área Contratada (ha)</label>
+                        <input type="number" step="0.01" value={glebaForm.area_contratada_ha} onChange={e=>setGlebaForm(f=>({...f,area_contratada_ha:e.target.value}))} placeholder="Ex: 3.5"/>
+                      </div>
+                      <div className="fg">
+                        <label>Cód. Município IBGE</label>
+                        <input value={glebaForm.municipio_ibge} onChange={e=>setGlebaForm(f=>({...f,municipio_ibge:e.target.value}))} placeholder="Ex: 3200300" style={{fontFamily:"monospace",fontSize:11}}/>
+                      </div>
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <label style={{fontSize:10,color:"var(--dim)",fontWeight:600,letterSpacing:.5,display:"block",marginBottom:4}}>
+                        VÉRTICES DO PERÍMETRO — SIRGAS2000 (uma linha por ponto: lat, lon, alt)
+                      </label>
+                      <textarea value={glebaForm.vertices_raw} onChange={e=>setGlebaForm(f=>({...f,vertices_raw:e.target.value}))}
+                        placeholder={"-19.420512, -40.552301, 680\n-19.421045, -40.551890, 682\n..."}
+                        rows={4} style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"7px 10px",fontSize:11,color:"var(--text)",fontFamily:"monospace",boxSizing:"border-box",resize:"vertical"}}/>
+                      <div style={{fontSize:9,color:"var(--dim)",marginTop:3}}>SIRGAS2000 · 6 casas decimais · altitude em metros (opcional)</div>
+                    </div>
+                    <div style={{marginBottom:8}}>
+                      <label style={{fontSize:10,color:"var(--dim)",fontWeight:600,letterSpacing:.5,display:"block",marginBottom:4}}>DESCRIÇÃO DA GLEBA</label>
+                      <input value={glebaForm.descricao} onChange={e=>setGlebaForm(f=>({...f,descricao:e.target.value}))} placeholder="Ex: Talhão norte — área de café arábica" style={{width:"100%",background:"var(--bg3)",border:"1px solid var(--bdr)",borderRadius:4,padding:"6px 9px",fontSize:12,color:"var(--text)",boxSizing:"border-box"}}/>
+                    </div>
+                    {form.prod_id && glebaForm.codigo_car && (
+                      <div style={{marginBottom:8}}>
+                        <button className="btn btn-ghost" style={{fontSize:9,padding:"4px 12px"}} onClick={verificarGleba} disabled={verificandoGleba}>
+                          <Icon d={IC.search} size={10}/> {verificandoGleba ? "VERIFICANDO..." : "VERIFICAR SOBREPOSIÇÃO (MCR 3-6-3-b)"}
+                        </button>
+                      </div>
+                    )}
+                    {glebaAlerta && (
+                      <div style={{padding:"10px 14px",borderRadius:4,marginBottom:8,fontSize:11,background:glebaAlerta.status==="livre"?"rgba(109,181,128,.08)":"rgba(220,38,38,.08)",border:`1px solid ${glebaAlerta.status==="livre"?"rgba(109,181,128,.3)":"rgba(220,38,38,.3)"}`,color:glebaAlerta.status==="livre"?"var(--green)":"var(--red)"}}>
+                        <div style={{fontWeight:700,marginBottom:4}}>{glebaAlerta.status==="livre"?"✓ Gleba disponível":"⚠ Impedimento detectado"}</div>
+                        {glebaAlerta.conflitos?.map((c,i)=>(
+                          <div key={i} style={{fontSize:10,marginTop:4,color:"var(--mid)"}}>• {c.tipo?.replace(/_/g," ")} {c.operacao_id?`— Op. ${c.operacao_id}`:""}</div>
+                        ))}
+                        <div style={{fontSize:9,color:"var(--dim)",marginTop:4}}>{glebaAlerta.orientacao}</div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-          <div style={{display:"flex",justifyContent:"flex-end"}}>
-            <button className="btn btn-green" onClick={criarOperacao}>
-              <Icon d={IC.ops} size={11}/> CRIAR OPERAÇÃO
-            </button>
+              <div style={{display:"flex",justifyContent:"flex-end"}}>
+                <button className="btn btn-green" onClick={criarOperacao}>
+                  <Icon d={IC.ops} size={11}/> CRIAR OPERAÇÃO
+                </button>
+              </div>
+            </div>
+
+            {/* coluna direita — painel de elegibilidade */}
+            <ElegibilidadePanel
+              prodId={form.prod_id}
+              linha={form.linha}
+              modalidade={form.modalidade}
+              valor={form.valor}
+              ciente={cienteAware}
+              setCiente={setCienteAware}
+              onUsarAlternativa={(linhaAlt) => set("linha", linhaAlt)}
+            />
           </div>
         </div>
       )}
+
+
 
       {/* Filters */}
       <div style={{display:"flex",gap:6,marginBottom:12}}>
@@ -1809,7 +2078,29 @@ function MayaApp() {
           {screen==="operacoes" && <Operacoes setScreen={setScreen} setSelectedOp={setSelectedOp}/>}
           {screen==="produtores" && <ListaProdutores setScreen={setScreen} setSelectedProd={setSelectedProd}/>}
           {screen==="checklist" && selectedOp && <Checklist setScreen={setScreen} selectedOp={selectedOp}/>}
-          {screen==="dossie"    && selectedOp && <Dossie setScreen={setScreen} selectedOp={selectedOp}/>}
+          {screen==="checklist" && !selectedOp && (
+            <div className="scroll">
+              <div style={{textAlign:"center",padding:"60px 20px"}}>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:22,fontWeight:800,color:"var(--gold)",letterSpacing:1,marginBottom:8}}>Documentos</div>
+                <div style={{fontSize:11,color:"var(--mid)",marginBottom:20}}>Selecione uma operação para ver o checklist de documentos.</div>
+                <button className="btn btn-gold" onClick={()=>setScreen("operacoes")}>
+                  <Icon d={IC.ops} size={11}/> IR PARA OPERAÇÕES
+                </button>
+              </div>
+            </div>
+          )}
+          {screen==="dossie" && selectedOp && <Dossie setScreen={setScreen} selectedOp={selectedOp}/>}
+          {screen==="dossie" && !selectedOp && (
+            <div className="scroll">
+              <div style={{textAlign:"center",padding:"60px 20px"}}>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:22,fontWeight:800,color:"var(--gold)",letterSpacing:1,marginBottom:8}}>Dossiê</div>
+                <div style={{fontSize:11,color:"var(--mid)",marginBottom:20}}>Selecione uma operação para visualizar o dossiê completo.</div>
+                <button className="btn btn-gold" onClick={()=>setScreen("operacoes")}>
+                  <Icon d={IC.ops} size={11}/> IR PARA OPERAÇÕES
+                </button>
+              </div>
+            </div>
+          )}
           {screen==="usuarios"  && isAdmin() && <GerenciarUsuarios setScreen={setScreen}/>}
         </div>
       </div>

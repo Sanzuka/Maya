@@ -14,11 +14,12 @@ const statusLabels = {
   encaminhado: "Encaminhado",
 };
 
-const columns = ["Produtor", "Linha", "Valor", "Docs", "Status"];
+const columns = ["Produtor", "Linha", "Valor", "Banco", "Docs", "Status"];
 const colWidths = [
-  "w-[180px]",
-  "w-[140px]",
-  "w-[130px]",
+  "w-[160px]",
+  "w-[120px]",
+  "w-[110px]",
+  "w-[110px]",
   "flex-1",
   "w-[110px] text-right",
 ];
@@ -83,9 +84,14 @@ export default function RecentDossiesTable({ dossies = [], onClickOp }) {
                 {op.modalidade}
               </span>
             </div>
-            <span className="w-[130px] text-sm font-semibold text-[#111111] dark:text-[#F0F0F0]">
+            <span className="w-[110px] text-sm font-semibold text-[#111111] dark:text-[#F0F0F0]">
               {formatCurrency(op.valor)}
             </span>
+            <div className="w-[110px]">
+              <span className="text-xs text-[#555555] dark:text-[#AAAAAA] block">
+                {op.banco || "—"}
+              </span>
+            </div>
             <div className="flex-1 flex items-center gap-2">
               <div className="h-1.5 flex-1 max-w-[80px] bg-[#E0E0E0] dark:bg-[#2E3347] rounded">
                 <div
