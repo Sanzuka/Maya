@@ -1042,19 +1042,30 @@ async def obter_estatisticas():
     inicio_mes_local = hoje_local.replace(day=1)
     inicio_mes_utc = inicio_mes_local.astimezone(timezone.utc)
     
-    # Contar operações de hoje (data_criacao >= hoje em fuso local, convertido para UTC)
+    # Contar operações de hoje (suporta string ISO e datetime nativo do MongoDB)
     ops_hoje = await db.operacoes.count_documents({
-        "created_at": {"$gte": hoje_utc.isoformat()}
+        "$or": [
+            {"created_at": {"$gte": hoje_utc.isoformat()}},
+            {"created_at": {"$gte": hoje_utc}}
+        ]
     })
     
     # Contar operações do mês
     ops_mes = await db.operacoes.count_documents({
-        "created_at": {"$gte": inicio_mes_utc.isoformat()}
+        "$or": [
+            {"created_at": {"$gte": inicio_mes_utc.isoformat()}},
+            {"created_at": {"$gte": inicio_mes_utc}}
+        ]
     })
     
     # Calcular crédito total do mês
     pipeline = [
-        {"$match": {"created_at": {"$gte": inicio_mes_utc.isoformat()}}},
+        {"$match": {
+            "$or": [
+                {"created_at": {"$gte": inicio_mes_utc.isoformat()}},
+                {"created_at": {"$gte": inicio_mes_utc}}
+            ]
+        }},
         {"$group": {"_id": None, "total": {"$sum": "$valor"}}}
     ]
     credito_result = await db.operacoes.aggregate(pipeline).to_list(1)
@@ -1381,9 +1392,9 @@ async def get_laudo_publico(report_id: str):
 
     return {"ok": True, "laudo": doc, "produtor": produtor}
 
-@api_router.get("/")
-async def root():
-    return {"message": "API MAYA - Sistema de CrÃ©dito Rural", "version": "2.0.0", "auth": "enabled"}
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 # Include the router in the main app
 app.include_router(api_router)
