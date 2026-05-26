@@ -1032,22 +1032,29 @@ async def obter_estatisticas():
     """Obter estatísticas para o dashboard"""
     from datetime import timedelta
     
-    hoje = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    inicio_mes = hoje.replace(day=1)
+    # Fuso horário local do escritório (Marilândia ES = UTC-3)
+    tz_local = timezone(timedelta(hours=-3))
+    agora_local = datetime.now(tz_local)
     
-    # Contar operações de hoje
+    hoje_local = agora_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    hoje_utc = hoje_local.astimezone(timezone.utc)
+    
+    inicio_mes_local = hoje_local.replace(day=1)
+    inicio_mes_utc = inicio_mes_local.astimezone(timezone.utc)
+    
+    # Contar operações de hoje (data_criacao >= hoje em fuso local, convertido para UTC)
     ops_hoje = await db.operacoes.count_documents({
-        "created_at": {"$gte": hoje.isoformat()}
+        "created_at": {"$gte": hoje_utc.isoformat()}
     })
     
     # Contar operações do mês
     ops_mes = await db.operacoes.count_documents({
-        "created_at": {"$gte": inicio_mes.isoformat()}
+        "created_at": {"$gte": inicio_mes_utc.isoformat()}
     })
     
     # Calcular crédito total do mês
     pipeline = [
-        {"$match": {"created_at": {"$gte": inicio_mes.isoformat()}}},
+        {"$match": {"created_at": {"$gte": inicio_mes_utc.isoformat()}}},
         {"$group": {"_id": None, "total": {"$sum": "$valor"}}}
     ]
     credito_result = await db.operacoes.aggregate(pipeline).to_list(1)
@@ -1139,7 +1146,171 @@ async def validate_documento_endpoint(req: ValidateDocumentoRequest):
     """
     resultado = await validate_documento(req.tipo, req.valor)
     return resultado
+class ChatRequest(BaseModel):
+    mensagem: str
+    contexto_op: Optional[dict] = None
+    historico: Optional[List[dict]] = None
 
+@api_router.post("/chat")
+async def chat_endpoint(req: ChatRequest):
+    """
+    Endpoint do Chat MAYA. Processa a mensagem do usuário utilizando o contexto
+    da operação (produtor, dados da proposta e checklist) e as regras do MCR 2025/2026.
+    Integra com DeepSeek ou OpenAI (ou fallback offline).
+    """
+    import httpx
+    
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+    
+    # Prompt do Sistema (regras do MCR + persona da Maya)
+    system_prompt = (
+        "Você é a MAYA, uma inteligência artificial especialista em Crédito Rural no Brasil.\n"
+        "Seu papel é auxiliar técnicos agrícolas a elaborar propostas e tirar dúvidas baseadas no Manual de Crédito Rural (MCR) do BACEN (safra 2025/2026).\n"
+        "Você analisa os dados do produtor, da proposta (enquadramento PRONAF, PRONAMP ou Livre) e os documentos pendentes de forma didática, prestativa e extremamente profissional.\n"
+        "Instruções:\n"
+        "- Responda com clareza e autoridade técnica, em português.\n"
+        "- Use formatação Markdown (tabelas, listas, negrito) para estruturar a resposta de forma agradável.\n"
+        "- Baseie-se estritamente nas regras oficiais (PRONAF: renda até 415k; PRONAMP: renda até 2.4M; Livre: mercado).\n"
+        "- Se o produtor/operação fornecidos no contexto apresentarem pendências, mostre como solucioná-las de forma proativa.\n"
+    )
+    
+    # Construir o contexto dinâmico no prompt
+    context_str = ""
+    if req.contexto_op:
+        produtor = req.contexto_op.get("produtor", {})
+        operacao = req.contexto_op.get("operacao", {})
+        documentos = req.contexto_op.get("documentos", {})
+        
+        context_str = "\n\n=== CONTEXTO DA OPERAÇÃO ATUAL ===\n"
+        if operacao:
+            context_str += (
+                f"- ID da Operação: {operacao.get('id', 'N/A')}\n"
+                f"- Linha de Crédito: {operacao.get('linha', 'N/A')}\n"
+                f"- Modalidade: {operacao.get('modalidade', 'N/A')}\n"
+                f"- Valor da Proposta: R$ {operacao.get('valor', 0):,.2f}\n"
+                f"- Cultura: {operacao.get('cultura', 'N/A')}\n"
+                f"- Banco Destino: {operacao.get('banco', 'N/A')}\n"
+                f"- Status da Operação: {operacao.get('status', 'N/A')}\n"
+            )
+        if produtor:
+            context_str += (
+                f"\nDados do Produtor:\n"
+                f"- Nome: {produtor.get('nome', 'N/A')}\n"
+                f"- CPF: {produtor.get('cpf', 'N/A')}\n"
+                f"- Município/UF: {produtor.get('municipio', 'N/A')}/{produtor.get('uf', 'N/A')}\n"
+                f"- Renda Bruta Anual: R$ {produtor.get('renda', 0):,.2f}\n"
+                f"- Módulos Fiscais: {produtor.get('modulos', 'N/A')}\n"
+                f"- Atividade Principal: {produtor.get('atividade', 'N/A')}\n"
+                f"- Registro CAF/DAP: {produtor.get('caf', 'Ausente')}\n"
+                f"- Registro CCIR: {produtor.get('ccir', 'Ausente')}\n"
+                f"- Registro CAR: {produtor.get('car', 'Ausente')}\n"
+            )
+        if documentos:
+            context_str += "\nStatus do Checklist de Documentos:\n"
+            for doc_key, doc_status in documentos.items():
+                context_str += f"- {doc_key.upper()}: {doc_status}\n"
+                
+    messages = [{"role": "system", "content": system_prompt + context_str}]
+    
+    # Incluir histórico se fornecido
+    if req.historico:
+        for msg in req.historico:
+            if msg.get("role") in ["user", "assistant"]:
+                messages.append({"role": msg.get("role"), "content": msg.get("content")})
+                
+    # Adicionar mensagem atual
+    messages.append({"role": "user", "content": req.mensagem})
+    
+    # Tentar chamar DeepSeek
+    if deepseek_key:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    "https://api.deepseek.com/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {deepseek_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": messages,
+                        "temperature": 0.3
+                    }
+                )
+                if resp.status_code == 200:
+                    result = resp.json()
+                    return {
+                        "resposta": result["choices"][0]["message"]["content"],
+                        "provider": "deepseek"
+                    }
+        except Exception as e:
+            logging.error(f"Erro ao chamar DeepSeek: {e}")
+            
+    # Tentar chamar OpenAI
+    if openai_key:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {openai_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": messages,
+                        "temperature": 0.3
+                    }
+                )
+                if resp.status_code == 200:
+                    result = resp.json()
+                    return {
+                        "resposta": result["choices"][0]["message"]["content"],
+                        "provider": "openai"
+                    }
+        except Exception as e:
+            logging.error(f"Erro ao chamar OpenAI: {e}")
+            
+    # Fallback Offline se nenhuma chave ou chamada falhar
+    # Geramos uma resposta baseada nas regras de elegibilidade se o contexto_op for fornecido
+    res_obs = "Olá! Sou a **MAYA**.\n\n*Nota: Estou operando em modo offline devido a ausência de chaves de API OpenAI/DeepSeek nas configurações.*\n\nCom base nas regras estáticas do Manual de Crédito Rural (MCR):\n"
+    if req.contexto_op and req.contexto_op.get("operacao"):
+        op = req.contexto_op["operacao"]
+        prod = req.contexto_op.get("produtor", {})
+        renda = float(prod.get("renda", 0) or 0)
+        valor = float(op.get("valor", 0) or 0)
+        linha = op.get("linha", "N/A")
+        
+        # Validar enquadramento básico
+        res_obs += f"- **Enquadramento da Linha {linha}:** "
+        if linha == "PRONAF":
+            if renda > 415000:
+                res_obs += f"⚠️ **Incompatível!** A renda bruta de R$ {renda:,.2f} excede o limite do PRONAF de R$ 415.000,00.\n"
+            else:
+                res_obs += f"✓ **Compatível!** A renda de R$ {renda:,.2f} está dentro do limite do PRONAF (até R$ 415.000,00).\n"
+        elif linha == "PRONAMP":
+            if renda > 2400000:
+                res_obs += f"⚠️ **Incompatível!** A renda bruta de R$ {renda:,.2f} excede o limite do PRONAMP de R$ 2.400.000,00.\n"
+            else:
+                res_obs += f"✓ **Compatível!** A renda de R$ {renda:,.2f} está dentro do limite do PRONAMP (até R$ 2.400.000,00).\n"
+        else:
+            res_obs += f"✓ **Compatível!** A linha Livre não impõe limites de renda bruta.\n"
+            
+        # Validar checklist
+        docs = req.contexto_op.get("documentos", {})
+        faltosos = [k.upper() for k, v in docs.items() if v != "ok"]
+        if faltosos:
+            res_obs += f"- **Documentos Pendentes:** Existem {len(faltosos)} documentos pendentes ({', '.join(faltosos)}). Certifique-se de recolhê-los antes da submissão ao banco.\n"
+        else:
+            res_obs += "- **Documentação:** ✓ Todos os documentos obrigatórios da proposta estão corretos!\n"
+    else:
+        res_obs += "Digite uma dúvida sobre enquadramento (PRONAF, PRONAMP, Livre) ou limites do MCR e poderei lhe ajudar com as regras gerais do manual!"
+        
+    return {
+        "resposta": res_obs,
+        "provider": "offline"
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ROUTE RAIZ

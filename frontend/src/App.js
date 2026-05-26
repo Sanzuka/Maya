@@ -278,6 +278,255 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospac
 .kpi-prog-bg{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:4px;}
 .kpi-prog-fill{height:100%;border-radius:2px;background:var(--green);transition:width .4s ease;}
 .kpi-prog-label{font-size:8px;color:var(--dim);display:flex;justify-content:space-between;}
+
+/* MAYA CHAT MODAL PREMIUM STYLES */
+.maya-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 17, 23, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.2s ease-out;
+}
+.maya-modal-container {
+  width: 520px;
+  height: 650px;
+  background: #181B22;
+  border: 1px solid rgba(168, 133, 43, 0.35);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #E2E8F0;
+  font-family: inherit;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.maya-modal-header {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #1E232D, #12151B);
+  border-bottom: 1px solid rgba(168, 133, 43, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.maya-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.maya-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #A8852B, #D4AF37);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 0 10px rgba(168, 133, 43, 0.4);
+}
+.maya-header-text h3 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #F3F4F6;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.maya-online-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+  display: inline-block;
+  animation: pulse 1.5s infinite;
+}
+.maya-header-text p {
+  font-size: 10px;
+  color: #9CA3AF;
+  margin: 0;
+}
+.maya-close-btn {
+  background: transparent;
+  border: none;
+  color: #9CA3AF;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.maya-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #F3F4F6;
+}
+.maya-chat-history {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #0F1216;
+}
+.maya-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+  animation: messageFadeIn 0.25s ease-out forwards;
+}
+.maya-message.user {
+  align-self: flex-end;
+}
+.maya-message.assistant {
+  align-self: flex-start;
+}
+.maya-message-bubble {
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.maya-message.user .maya-message-bubble {
+  background: #2563EB;
+  color: #FFFFFF;
+  border-bottom-right-radius: 2px;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
+.maya-message.assistant .maya-message-bubble {
+  background: #1E232D;
+  color: #E2E8F0;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom-left-radius: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.maya-message-time {
+  font-size: 9px;
+  color: #6B7280;
+  margin-top: 4px;
+}
+.maya-message.user .maya-message-time {
+  text-align: right;
+}
+.maya-suggestion-box {
+  padding: 10px 20px;
+  background: #12151B;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.maya-chip {
+  background: rgba(168, 133, 43, 0.12);
+  border: 1px solid rgba(168, 133, 43, 0.3);
+  color: #D4AF37;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.maya-chip:hover {
+  background: rgba(168, 133, 43, 0.25);
+  border-color: #D4AF37;
+  color: #FFFFFF;
+  transform: translateY(-1px);
+}
+.maya-chat-input-area {
+  padding: 16px 20px;
+  background: #181B22;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.maya-chat-input-wrapper {
+  flex: 1;
+  position: relative;
+}
+.maya-chat-input {
+  width: 100%;
+  background: #0F1216;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 12px 20px;
+  font-size: 12.5px;
+  color: #FFFFFF;
+  outline: none;
+  transition: all 0.2s;
+}
+.maya-chat-input:focus {
+  border-color: #A8852B;
+  box-shadow: 0 0 0 2px rgba(168, 133, 43, 0.2);
+}
+.maya-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #A8852B, #8A6710);
+  border: none;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 10px rgba(168, 133, 43, 0.3);
+}
+.maya-send-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 14px rgba(168, 133, 43, 0.45);
+}
+.maya-send-btn:disabled {
+  background: #4B5563;
+  color: #9CA3AF;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.maya-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+  background: #1E232D;
+  border-radius: 12px;
+  width: fit-content;
+}
+.maya-typing-dot {
+  width: 6px;
+  height: 6px;
+  background: #9CA3AF;
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out;
+}
+.maya-typing-dot:nth-child(1) { animation-delay: 0s; }
+.maya-typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.maya-typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Animations */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes messageFadeIn { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.2); opacity: 0.6; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes typing {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -666,7 +915,7 @@ function ElegibilidadePanel({ prodId, linha, modalidade, valor, onUsarAlternativ
               style={{width:'100%',justifyContent:'center',fontSize:9,padding:'6px 10px',marginBottom:8}}
               onClick={() => onUsarAlternativa && onUsarAlternativa(result.linha_alternativa_sugerida)}
             >
-              Usar {result.linha_alternativa_sugerida} em vez disso
+              Ver elegibilidade para {result.linha_alternativa_sugerida}
             </button>
           )}
 
@@ -841,7 +1090,16 @@ function Operacoes({ setScreen, setSelectedOp }) {
                   <label>Produtor</label>
                   <select value={form.prod_id} onChange={e=>set("prod_id",e.target.value)}>
                     <option value="">Selecione o produtor...</option>
-                    {produtores.map(p=><option key={p.id} value={p.id}>{p.nome} — {p.municipio}</option>)}
+                    {produtores
+                      .filter(p => p.nome && p.nome.trim() !== "")
+                      .map(p => {
+                        const cidade = p.municipio || p.cidade;
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {cidade ? `${p.nome} — ${cidade}` : p.nome}
+                          </option>
+                        );
+                      })}
                   </select>
                 </div>
                 <div className="fg">
@@ -1168,6 +1426,7 @@ function Checklist({ setScreen, selectedOp }) {
 function Dossie({ setScreen, selectedOp }) {
   const [operacao, setOperacao] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     carregarDados();
@@ -1209,6 +1468,13 @@ function Dossie({ setScreen, selectedOp }) {
           </button>
           <button className="btn btn-ghost" onClick={()=>setScreen("checklist")}>
             <Icon d={IC.docs} size={11}/> DOCUMENTOS
+          </button>
+          <button 
+            className="btn" 
+            style={{background:"linear-gradient(135deg, #1E3A8A, #3B82F6)", color:"#FFFFFF", border:"none"}}
+            onClick={() => setChatOpen(true)}
+          >
+            💬 Consultar Maya
           </button>
           <button className="btn btn-gold">
             <Icon d={IC.pdf} size={11}/> GERAR PDF
@@ -1327,6 +1593,215 @@ function Dossie({ setScreen, selectedOp }) {
             <span className="tl-date">{item.dt}</span>
           </div>
         ))}
+      </div>
+
+      {chatOpen && (
+        <MayaChatModal 
+          onClose={() => setChatOpen(false)} 
+          operacao={operacao}
+        />
+      )}
+    </div>
+  );
+}
+
+function MayaChatModal({ onClose, operacao }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = React.useRef(null);
+
+  const prod = operacao?.produtor || {};
+  const formatCurrency = (val) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
+
+  useEffect(() => {
+    const greeting = `Olá! Sou a **MAYA**, sua especialista em crédito rural. 
+
+Estou com o dossiê da operação **${operacao.id}** aberto e pronta para analisar a proposta do produtor **${prod.nome || "N/A"}** na linha **${operacao.linha} — ${operacao.modalidade}** (R$ ${operacao.valor ? operacao.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : "0,00"}).
+
+Como posso te apoiar com o enquadramento do MCR ou com a documentação pendente hoje?`;
+
+    setMessages([
+      { role: "assistant", content: greeting, timestamp: new Date() }
+    ]);
+  }, [operacao]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  const enviarMensagem = async (texto) => {
+    if (!texto || !texto.trim() || loading) return;
+    
+    const userMsg = { role: "user", content: texto, timestamp: new Date() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput("");
+    setLoading(true);
+
+    const historico = messages.map(m => ({
+      role: m.role,
+      content: m.content
+    }));
+
+    const contexto_op = {
+      produtor: prod,
+      operacao: {
+        id: operacao.id,
+        linha: operacao.linha,
+        modalidade: operacao.modalidade,
+        valor: operacao.valor,
+        cultura: operacao.cultura,
+        banco: operacao.banco,
+        status: operacao.status,
+      },
+      documentos: operacao.documentos || {}
+    };
+
+    try {
+      const res = await axios.post(`${API}/chat`, {
+        mensagem: texto,
+        contexto_op,
+        historico
+      });
+
+      setMessages(prev => [
+        ...prev,
+        {
+          role: "assistant",
+          content: res.data.resposta,
+          provider: res.data.provider,
+          timestamp: new Date()
+        }
+      ]);
+    } catch (e) {
+      setMessages(prev => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Desculpe, tive um problema de conexão com meus servidores de IA. Verifique as configurações de rede ou tente novamente.",
+          provider: "erro",
+          timestamp: new Date()
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      enviarMensagem(input);
+    }
+  };
+
+  const chips = [
+    "Esta proposta está enquadrada?",
+    "Quais documentos faltam?",
+    "Qual é a taxa de juros?",
+    "Qual o limite para esta linha?"
+  ];
+
+  return (
+    <div className="maya-modal-overlay" onClick={onClose}>
+      <div className="maya-modal-container" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="maya-modal-header">
+          <div className="maya-header-info">
+            <div className="maya-avatar">🌾</div>
+            <div className="maya-header-text">
+              <h3>MAYA <span className="maya-online-pulse"></span></h3>
+              <p>Consultora Especialista MCR 2025/2026</p>
+            </div>
+          </div>
+          <button className="maya-close-btn" onClick={onClose} title="Fechar Chat">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        {/* History */}
+        <div className="maya-chat-history">
+          {messages.map((msg, idx) => {
+            const time = msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            return (
+              <div key={idx} className={`maya-message ${msg.role}`}>
+                <div className="maya-message-bubble">
+                  {msg.content.split("\n").map((line, lIdx) => {
+                    const parts = line.split("**");
+                    return (
+                      <div key={lIdx} style={{ minHeight: "1.2em" }}>
+                        {parts.map((part, pIdx) => {
+                          if (pIdx % 2 === 1) {
+                            return <strong key={pIdx} style={{color: "var(--gold)"}}>{part}</strong>;
+                          }
+                          return part;
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="maya-message-time">
+                  {time} {msg.provider && msg.provider !== "offline" && `· via ${msg.provider}`}
+                  {msg.provider === "offline" && `· offline fallback`}
+                </div>
+              </div>
+            );
+          })}
+          
+          {loading && (
+            <div className="maya-message assistant">
+              <div className="maya-typing-indicator">
+                <div className="maya-typing-dot"></div>
+                <div className="maya-typing-dot"></div>
+                <div className="maya-typing-dot"></div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Chips */}
+        <div className="maya-suggestion-box">
+          {chips.map(chip => (
+            <button 
+              key={chip} 
+              className="maya-chip"
+              onClick={() => enviarMensagem(chip)}
+              disabled={loading}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+
+        {/* Input */}
+        <div className="maya-chat-input-area">
+          <div className="maya-chat-input-wrapper">
+            <input
+              type="text"
+              className="maya-chat-input"
+              placeholder="Pergunte à Maya sobre as regras do MCR..."
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={loading}
+            />
+          </div>
+          <button 
+            className="maya-send-btn" 
+            onClick={() => enviarMensagem(input)}
+            disabled={loading || !input.trim()}
+            title="Enviar mensagem"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );
